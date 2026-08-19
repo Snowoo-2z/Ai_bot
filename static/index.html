@@ -2,42 +2,420 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mon Bot Arena</title>
 <style>
-  body { font-family: sans-serif; max-width: 650px; margin: 40px auto; padding: 0 20px; }
-  textarea { width: 100%; padding: 10px; box-sizing: border-box; }
-  #chatbox { border: 1px solid #ddd; border-radius: 8px; padding: 15px; height: 350px; overflow-y: auto; margin: 15px 0; }
-  .user-msg { text-align: right; color: #2563eb; margin: 8px 0; }
-  .bot-msg { text-align: left; color: #16a34a; margin: 8px 0; }
-  .loading { color: gray; font-style: italic; }
-  button { padding: 10px 20px; cursor: pointer; }
+  :root {
+    --bg: #0b0e17;
+    --bg-glow-1: rgba(99, 102, 241, 0.22);
+    --bg-glow-2: rgba(168, 85, 247, 0.16);
+    --card: rgba(17, 21, 34, 0.72);
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e6e9f2;
+    --text-dim: #8b93a7;
+    --accent: #6366f1;
+    --accent-2: #a855f7;
+    --user-bubble: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --bot-bubble: rgba(255, 255, 255, 0.06);
+    --ok: #34d399;
+    --err: #f87171;
+    --warn: #fbbf24;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 500px at 12% -10%, var(--bg-glow-1), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, var(--bg-glow-2), transparent 55%),
+      var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 4px 6px;
+  }
+
+  .logo {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+  }
+
+  header h1 {
+    font-size: 20px;
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  header .sub {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .status-pill {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 7px 12px;
+    border-radius: 999px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+    70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 16px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  }
+
+  .settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  label {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input[type="password"], textarea {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    padding: 12px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    transition: border-color .15s, box-shadow .15s;
+  }
+
+  input[type="password"]:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  }
+
+  #chatbox {
+    height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 4px;
+    scroll-behavior: smooth;
+  }
+
+  #chatbox::-webkit-scrollbar { width: 8px; }
+  #chatbox::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+
+  .row {
+    display: flex;
+    gap: 10px;
+  }
+  .row.user { justify-content: flex-end; }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .row.bot .avatar { background: rgba(99,102,241,0.18); }
+  .row.user .avatar { background: rgba(168,85,247,0.18); order: 2; }
+
+  .bubble {
+    max-width: 78%;
+    padding: 11px 15px;
+    border-radius: 16px;
+    font-size: 14.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .row.bot .bubble { background: var(--bot-bubble); border: 1px solid var(--border); border-top-left-radius: 6px; }
+  .row.user .bubble { background: var(--user-bubble); border-top-right-radius: 6px; box-shadow: 0 6px 18px rgba(99,102,241,0.35); }
+
+  .bubble .name {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+    opacity: 0.7;
+  }
+
+  .bubble.err { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.35); }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .typing i {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-dim);
+    animation: blink 1.4s infinite both;
+  }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+  .status-msg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    padding: 6px 2px;
+  }
+  .status-msg .spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.15);
+    color: var(--warn);
+  }
+
+  .composer {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .composer textarea { resize: none; min-height: 52px; max-height: 160px; }
+
+  button#send {
+    border: none;
+    cursor: pointer;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+    transition: transform .12s, box-shadow .12s, opacity .12s;
+  }
+  button#send:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(99,102,241,0.5); }
+  button#send:active { transform: translateY(0); }
+  button#send:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+  .hint {
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    opacity: 0.75;
+  }
+
+  .empty {
+    margin: auto;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
+  .empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+
+  @media (max-width: 520px) {
+    .status-pill span.txt { display: none; }
+    .bubble { max-width: 86%; }
+  }
 </style>
 </head>
 <body>
-  <h1>🤖 Mon Bot Arena (Render)</h1>
-  <input type="password" id="apiKey" placeholder="Ta clé API secrète" style="width:100%; padding:8px; margin-bottom:10px;">
-  <textarea id="systemPrompt" placeholder="System prompt (optionnel)" rows="2"></textarea>
-  <div id="chatbox"></div>
-  <div style="display:flex; gap:10px;">
-    <textarea id="prompt" placeholder="Ton message..." rows="2" style="flex-grow:1;"></textarea>
-    <button onclick="sendMessage()">Envoyer</button>
+  <div class="app">
+    <header>
+      <div class="logo">🤖</div>
+      <div>
+        <h1>Mon Bot Arena</h1>
+        <div class="sub">Connecté à arena.ai — file d'attente intelligente</div>
+      </div>
+      <div class="status-pill"><span class="dot"></span><span class="txt">En ligne</span></div>
+    </header>
+
+    <div class="card settings">
+      <div>
+        <label for="apiKey">Clé API secrète</label>
+        <input type="password" id="apiKey" placeholder="Entre ta clé API…">
+      </div>
+      <div>
+        <label for="systemPrompt">System prompt <span style="text-transform:none; opacity:.7;">(optionnel)</span></label>
+        <textarea id="systemPrompt" rows="2" placeholder="Instructions système pour l'IA…"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="chatbox">
+        <div class="empty" id="emptyState">
+          <span class="big">💬</span>
+          Commence une conversation.<br>
+          Ton message sera ajouté à la file et traité automatiquement.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="composer">
+        <textarea id="prompt" rows="1" placeholder="Ton message… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)"></textarea>
+        <button id="send" onclick="sendMessage()" title="Envoyer">➤</button>
+      </div>
+    </div>
+
+    <div class="hint">Une seule demande est traitée à la fois · ta place dans la file s'affiche en direct</div>
   </div>
 
 <script>
   const chatbox = document.getElementById('chatbox');
+  const promptEl = document.getElementById('prompt');
+  const sendBtn = document.getElementById('send');
+
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function clearEmpty() {
+    const e = document.getElementById('emptyState');
+    if (e) e.remove();
+  }
+
+  function addUser(msg) {
+    clearEmpty();
+    chatbox.innerHTML += `
+      <div class="row user">
+        <div class="bubble"><div class="name">Toi</div>${escapeHtml(msg)}</div>
+        <div class="avatar">🙂</div>
+      </div>`;
+    scrollDown();
+  }
+
+  function addBot(msg, isErr) {
+    const cls = isErr ? 'bubble err' : 'bubble';
+    chatbox.innerHTML += `
+      <div class="row bot">
+        <div class="avatar">🤖</div>
+        <div class="${cls}"><div class="name">IA</div>${escapeHtml(msg)}</div>
+      </div>`;
+    scrollDown();
+  }
+
+  function addStatus() {
+    clearEmpty();
+    const id = 'status-' + Date.now();
+    chatbox.innerHTML += `
+      <div class="row bot" id="${id}">
+        <div class="avatar">🤖</div>
+        <div class="bubble">
+          <div class="status-msg">
+            <span class="spinner"></span>
+            <span class="lbl">Ajout à la file…</span>
+          </div>
+        </div>
+      </div>`;
+    scrollDown();
+    return id;
+  }
+
+  function updateStatus(id, label, badgeText) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const lbl = el.querySelector('.lbl');
+    if (lbl) lbl.textContent = label;
+    if (badgeText) {
+      if (!el.querySelector('.badge')) {
+        const b = document.createElement('span');
+        b.className = 'badge';
+        lbl.after(b);
+      }
+      el.querySelector('.badge').textContent = badgeText;
+    }
+  }
+
+  function removeStatus(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function scrollDown() {
+    chatbox.scrollTop = chatbox.scrollHeight;
+  }
 
   async function sendMessage() {
-    const prompt = document.getElementById('prompt').value.trim();
+    const prompt = promptEl.value.trim();
     const systemPrompt = document.getElementById('systemPrompt').value.trim();
     const apiKey = document.getElementById('apiKey').value.trim();
     if (!prompt || !apiKey) return alert("Prompt et clé API requis !");
 
-    chatbox.innerHTML += `<div class="user-msg"><b>Toi:</b> ${prompt}</div>`;
-    document.getElementById('prompt').value = '';
+    addUser(prompt);
+    promptEl.value = '';
+    promptEl.style.height = 'auto';
 
-    const loadingId = 'loading-' + Date.now();
-    chatbox.innerHTML += `<div class="loading" id="${loadingId}">🤖 Réflexion en cours (15-30s)...</div>`;
-    chatbox.scrollTop = chatbox.scrollHeight;
+    const statusId = addStatus();
+    sendBtn.disabled = true;
 
     try {
       const res = await fetch('/chat', {
@@ -46,19 +424,59 @@
         body: JSON.stringify({ prompt, system_prompt: systemPrompt })
       });
       const data = await res.json();
-      document.getElementById(loadingId).remove();
-
-      if (res.ok) {
-        chatbox.innerHTML += `<div class="bot-msg"><b>IA:</b> ${data.response}</div>`;
-      } else {
-        chatbox.innerHTML += `<div class="bot-msg" style="color:red;">Erreur: ${data.detail}</div>`;
+      if (!res.ok) {
+        removeStatus(statusId);
+        addBot(data.detail || data.error || 'Erreur inconnue', true);
+        return;
       }
+      await pollStatus(data.job_id, statusId);
     } catch (err) {
-      document.getElementById(loadingId).remove();
-      chatbox.innerHTML += `<div class="bot-msg" style="color:red;">Erreur réseau: ${err}</div>`;
+      removeStatus(statusId);
+      addBot('Erreur réseau: ' + err, true);
+    } finally {
+      sendBtn.disabled = false;
     }
-    chatbox.scrollTop = chatbox.scrollHeight;
   }
+
+  async function pollStatus(jobId, statusId) {
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch('/status/' + jobId);
+        if (!res.ok) continue;
+        const s = await res.json();
+
+        if (s.status === 'done') {
+          removeStatus(statusId);
+          addBot(s.result, false);
+          break;
+        } else if (s.status === 'error') {
+          removeStatus(statusId);
+          addBot(s.error, true);
+          break;
+        } else if (s.status === 'processing') {
+          updateStatus(statusId, '🤖 Traitement en cours…');
+        } else {
+          updateStatus(statusId, 'En file d'attente', `place ${s.position ?? '?'}`);
+        }
+      } catch (err) {
+        // erreur réseau passagère : on continue de poller
+      }
+      scrollDown();
+    }
+  }
+
+  // Entrée = envoyer · Maj+Entrée = nouvelle ligne · auto-redimensionnement du champ
+  promptEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  promptEl.addEventListener('input', () => {
+    promptEl.style.height = 'auto';
+    promptEl.style.height = Math.min(promptEl.scrollHeight, 160) + 'px';
+  });
 </script>
 </body>
 </html>
