@@ -404,11 +404,22 @@
     chatbox.scrollTop = chatbox.scrollHeight;
   }
 
+  function notice(msg) {
+    clearEmpty();
+    chatbox.innerHTML += `
+      <div class="row bot">
+        <div class="avatar">⚠️</div>
+        <div class="bubble err">${escapeHtml(msg)}</div>
+      </div>`;
+    scrollDown();
+  }
+
   async function sendMessage() {
     const prompt = promptEl.value.trim();
     const systemPrompt = document.getElementById('systemPrompt').value.trim();
     const apiKey = document.getElementById('apiKey').value.trim();
-    if (!prompt || !apiKey) return alert("Prompt et clé API requis !");
+    if (!apiKey) { notice("Entre d'abord ta clé API secrète."); document.getElementById('apiKey').focus(); return; }
+    if (!prompt) { notice("Écris un message avant d'envoyer."); promptEl.focus(); return; }
 
     addUser(prompt);
     promptEl.value = '';
@@ -457,7 +468,7 @@
         } else if (s.status === 'processing') {
           updateStatus(statusId, '🤖 Traitement en cours…');
         } else {
-          updateStatus(statusId, 'En file d'attente', `place ${s.position ?? '?'}`);
+          updateStatus(statusId, "En file d'attente", `place ${s.position ?? '?'}`);
         }
       } catch (err) {
         // erreur réseau passagère : on continue de poller
