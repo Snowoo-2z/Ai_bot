@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mon Bot Arena</title>
+<style>
+  body { font-family: sans-serif; max-width: 650px; margin: 40px auto; padding: 0 20px; }
+  textarea { width: 100%; padding: 10px; box-sizing: border-box; }
+  #chatbox { border: 1px solid #ddd; border-radius: 8px; padding: 15px; height: 350px; overflow-y: auto; margin: 15px 0; }
+  .user-msg { text-align: right; color: #2563eb; margin: 8px 0; }
+  .bot-msg { text-align: left; color: #16a34a; margin: 8px 0; }
+  .loading { color: gray; font-style: italic; }
+  button { padding: 10px 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>🤖 Mon Bot Arena (Render)</h1>
+  <input type="password" id="apiKey" placeholder="Ta clé API secrète" style="width:100%; padding:8px; margin-bottom:10px;">
+  <textarea id="systemPrompt" placeholder="System prompt (optionnel)" rows="2"></textarea>
+  <div id="chatbox"></div>
+  <div style="display:flex; gap:10px;">
+    <textarea id="prompt" placeholder="Ton message..." rows="2" style="flex-grow:1;"></textarea>
+    <button onclick="sendMessage()">Envoyer</button>
+  </div>
+
+<script>
+  const chatbox = document.getElementById('chatbox');
+
+  async function sendMessage() {
+    const prompt = document.getElementById('prompt').value.trim();
+    const systemPrompt = document.getElementById('systemPrompt').value.trim();
+    const apiKey = document.getElementById('apiKey').value.trim();
+    if (!prompt || !apiKey) return alert("Prompt et clé API requis !");
+
+    chatbox.innerHTML += `<div class="user-msg"><b>Toi:</b> ${prompt}</div>`;
+    document.getElementById('prompt').value = '';
+
+    const loadingId = 'loading-' + Date.now();
+    chatbox.innerHTML += `<div class="loading" id="${loadingId}">🤖 Réflexion en cours (15-30s)...</div>`;
+    chatbox.scrollTop = chatbox.scrollHeight;
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ prompt, system_prompt: systemPrompt })
+      });
+      const data = await res.json();
+      document.getElementById(loadingId).remove();
+
+      if (res.ok) {
+        chatbox.innerHTML += `<div class="bot-msg"><b>IA:</b> ${data.response}</div>`;
+      } else {
+        chatbox.innerHTML += `<div class="bot-msg" style="color:red;">Erreur: ${data.detail}</div>`;
+      }
+    } catch (err) {
+      document.getElementById(loadingId).remove();
+      chatbox.innerHTML += `<div class="bot-msg" style="color:red;">Erreur réseau: ${err}</div>`;
+    }
+    chatbox.scrollTop = chatbox.scrollHeight;
+  }
+</script>
+</body>
+</html>
