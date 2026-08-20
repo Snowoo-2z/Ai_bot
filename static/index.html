@@ -178,6 +178,24 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="row">
+        <input type="text" id="freeQuery" class="grow" placeholder="Images libres de droit… (Openverse CC / Wikimedia Commons)" onkeydown="if(event.key==='Enter')freeImages()">
+        <select id="freeSource" style="width:150px">
+          <option value="auto">Auto</option>
+          <option value="openverse">Openverse (CC)</option>
+          <option value="commons">Wikimedia Commons</option>
+        </select>
+        <select id="freeUsage" style="width:160px">
+          <option value="any">Toutes licences</option>
+          <option value="commercial">Usage commercial</option>
+        </select>
+        <button class="primary" onclick="freeImages()">🆓 Chercher libres</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Chaque image affiche sa <b>licence exacte</b> (ex. CC BY-SA 4.0) — vérifie toujours l'attribution demandée par la licence.</div>
+      <div id="freeArea"><div class="empty">Recherche d'images librement réutilisables — la licence est renvoyée pour chaque image.</div></div>
+    </div>
+
     <div class="muted" style="text-align:center; opacity:.7">
       Console de test de l'API — les vraies intégrations passent par <code>POST /api/session/{id}/action</code> avec le header <code>x-api-key</code>.
     </div>
@@ -343,6 +361,33 @@
       const d = await api('/api/session/' + s + '/upload', { method: 'POST', body: JSON.stringify({ selector, url }) });
       renderSnap(d.snapshot);
     } catch (e) { notice(e.message); }
+  }
+
+  async function freeImages() {
+    const q = $('freeQuery').value.trim();
+    if (!q) { notice('Entre une recherche d\'images libres.'); return; }
+    const area = $('freeArea');
+    area.innerHTML = '<div class="status-msg"><span class="spinner"></span><span>Recherche d\'images libres…</span></div>';
+    try {
+      const d = await api('/api/freeimages', {
+        method: 'POST',
+        body: JSON.stringify({ query: q, source: $('freeSource').value, usage: $('freeUsage').value, limit: 18 })
+      });
+      const imgs = d.images || [];
+      if (!imgs.length) { area.innerHTML = '<div class="empty">Aucun résultat pour cette recherche.</div>'; return; }
+      let html = '<div class="section-title">' + imgs.length + ' image(s) libre(s) — ' + (d.source === 'commons' ? 'Wikimedia Commons' : 'Openverse') + '</div><div class="img-grid">';
+      for (const im of imgs) {
+        const lic = esc(im.license || 'licence inconnue');
+        const licTitle = im.license_url ? ' · ' + esc(im.license_url) : '';
+        html += '<div class="img-thumb" title="' + esc(im.title || im.url) + ' · licence : ' + lic + licTitle + '" onclick="window.open(' + JSON.stringify(im.url) + ',\'_blank\')">'
+          + '<img loading="lazy" src="' + esc(im.thumbnail || im.url) + '" onerror="this.style.opacity=.12">'
+          + '<div class="t">' + lic + '</div></div>';
+      }
+      html += '</div><div class="muted" style="margin-top:8px">Clic sur une image = ouverture dans un nouvel onglet · survole une vignette pour voir l\'URL de sa licence.</div>';
+      area.innerHTML = html;
+    } catch (e) {
+      area.innerHTML = '<div class="notice">⚠️ ' + esc(e.message) + '</div>';
+    }
   }
 
   async function viewImage(url) {

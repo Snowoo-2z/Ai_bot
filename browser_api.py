@@ -46,6 +46,17 @@ SEARCH_IMAGE_URLS = {
     "duckduckgo": "https://duckduckgo.com/?q={q}&iax=images&ia=images",
 }
 
+# Filtres "usage rights" des moteurs (BEST EFFORT — basés sur ce que les
+# sites déclarent, pas une garantie légale. Voir README.)
+_LICENSE_TBS = {"free": "sur:f", "commercial": "sur:fc"}  # Google Images
+_LICENSE_BING = {
+    "free": "filterui:license-share",
+    "commercial": "filterui:license-sharecommercial",
+}  # Bing Images
+
+# Sources d'images garanties libres (licence renvoyée pour chaque image)
+FREE_IMAGE_SOURCES = ("openverse", "commons")
+
 # Extension de fichier déduite d'une URL ou d'un content-type
 _CTYPE_EXT = {
     "image/png": ".png",
@@ -68,6 +79,111 @@ def _guess_ext(url: str = "", content_type: str = "") -> str:
         if ctype in (content_type or "").lower():
             return ext
     return ".png"
+
+# ─────────────── Recherche d'images libres de droit ───────────────
+# Openverse (Creative Commons) et Wikimedia Commons renvoient la LICENCE
+# exacte de chaque image — contrairement aux moteurs classiques, on sait ce
+# qu'on a le droit de faire (afficher, modifier, usage commercial, attribution).
+
+
+def _strip_html(s: str) -> str:
+    return re.sub(r"<[^>]+>", "", s or "").replace("&nbsp;", " ").strip()
+
+
+def _fetch_json(url: str, timeout: int = 25) -> dict:
+    """GET JSON simple (stdlib) — exécuté hors de l'event loop via to_thread."""
+    import json as _json
+    import urllib.request
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "RemoteBrowserAPI/1.0 (https://github.com/Snowoo-2z/Ai_bot)"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        return _json.loads(resp.read().decode("utf-8"))
+
+
+def _parse_openverse(data: dict) -> list:
+    """Parse la réponse de l'API Openverse → images avec licence."""
+    images = []
+    for r in (data.get("results") or []):
+        images.append({
+            "title": r.get("title") or "",
+            "url": r.get("url") or "",
+            "thumbnail": r.get("thumbnail") or "",
+            "license": r.get("license") or "inconnue",
+            "license_url": r.get("license_url") or "",
+            "creator": r.get("creator") or "",
+            "source": r.get("source") or "openverse",
+        })
+    return images
+
+
+def _parse_commons(data: dict, usage: str = "any") -> list:
+    """Parse la réponse de l'API Wikimedia Commons → images avec licence.
+
+    usage == "commercial" : exclut les licences avec clause NC (non commercial).
+    """
+    images = []
+    for page in (data.get("query", {}).get("pages", {}) or {}).values():
+        info = (page.get("imageinfo") or [{}])[0]
+        ext = info.get("extmetadata", {}) or {}
+        lic = ((ext.get("LicenseShortName") or {}).get("value") or "").strip()
+        if usage == "commercial" and re.search(r"\bnc\b|noncommercial", lic, re.IGNORECASE):
+            continue
+        images.append({
+            "title": page.get("title", ""),
+            "url": info.get("url", ""),
+            "thumbnail": info.get("thumburl", ""),
+            "license": lic or "inconnue",
+            "license_url": ((ext.get("LicenseUrl") or {}).get("value") or "").strip(),
+            "creator": _strip_html((ext.get("Artist") or {}).get("value", "")),
+            "source": "wikimedia_commons",
+        })
+    return images
+
+
+async def free_image_search(query: str, source: str = "auto", usage: str = "any", limit: int = 10) -> dict:
+    """Recherche d'images librement réutilisables, avec la licence de chacune.
+
+    source : "openverse" (Creative Commons) | "commons" (Wikimedia Commons) | "auto"
+    usage  : "any" | "commercial" (exclut les licences non commerciales)
+    """
+    query = (query or "").strip()
+    if not query:
+        raise ActionError("La recherche d'images libres est vide.")
+    if usage not in ("any", "free", "commercial"):
+        raise ActionError("usage doit être 'any', 'free' ou 'commercial'.")
+    limit = max(1, min(int(limit), 50))
+    if source == "auto":
+        source = "openverse"
+    if source not in FREE_IMAGE_SOURCES:
+        raise ActionError(f"source inconnue : {source} (disponibles : openverse, commons, auto)")
+
+    try:
+        if source == "openverse":
+            lic_type = "commercial" if usage == "commercial" else "all"
+            url = (
+                "https://api.openverse.org/v1/images/?q=" + urllib.parse.quote(query)
+                + f"&page_size={limit}&license_type={lic_type}"
+            )
+            data = await asyncio.to_thread(_fetch_json, url)
+            images = _parse_openverse(data)
+        else:
+            url = (
+                "https://commons.wikimedia.org/w/api.php?action=query&format=json"
+                f"&generator=search&gsrsearch={urllib.parse.quote(query)}&gsrnamespace=6"
+                f"&gsrlimit={limit}&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=800"
+            )
+            data = await asyncio.to_thread(_fetch_json, url)
+            images = _parse_commons(data, usage)
+    except ActionError:
+        raise
+    except Exception as e:
+        raise ActionError(f"Recherche d'images libres impossible ({source}) : {e}") from e
+
+    return {"source": source, "usage": usage, "images": images}
+
 
 # ─────────────────────────── Erreurs ───────────────────────────
 class BrowserError(Exception):
@@ -211,6 +327,28 @@ def _is_engine_junk(engine: str, href: str) -> bool:
     return False
 
 
+def _image_search_url(query: str, engine: str, license_filter: str = "any") -> str:
+    """URL de recherche d'images, avec filtre de licence si demandé.
+
+    license_filter : "any" | "free" | "commercial" (best effort, voir README).
+    """
+    if engine not in SEARCH_IMAGE_URLS:
+        raise ActionError(f"Moteur inconnu : {engine} (disponibles : {', '.join(SEARCH_IMAGE_URLS)})")
+    if license_filter not in ("any", "free", "commercial"):
+        raise ActionError("license doit être 'any', 'free' ou 'commercial'.")
+    url = SEARCH_IMAGE_URLS[engine].format(q=urllib.parse.quote(query))
+    if license_filter == "any":
+        return url
+    if engine == "google":
+        return url + "&tbs=" + _LICENSE_TBS[license_filter]
+    if engine == "bing":
+        return url + "&qft=+" + _LICENSE_BING[license_filter]
+    raise ActionError(
+        "DuckDuckGo n'a pas de filtre de licence. Utilise plutôt l'endpoint "
+        "/api/freeimages (Openverse / Wikimedia Commons) pour des images libres."
+    )
+
+
 # ─────────────────────────── Session navigateur ───────────────────────────
 class BrowserSession:
     """Une session = un onglet isolé (contexte Chromium) dans le navigateur partagé."""
@@ -291,17 +429,17 @@ class BrowserSession:
         url = SEARCH_URLS[engine].format(q=urllib.parse.quote(query))
         await self._goto(url)
 
-    async def image_search(self, query: str, engine: str = "google"):
+    async def image_search(self, query: str, engine: str = "google", license_filter: str = "any"):
         """Recherche d'images (Google Images / Bing Images / DuckDuckGo Images).
 
+        license_filter : "any" | "free" | "commercial" — filtre "usage rights"
+        des moteurs (best effort, pas une garantie légale — voir README).
         Le snapshot renvoyé contient la liste `images` : {url, thumb, alt, width, height}.
         """
         query = (query or "").strip()
         if not query:
             raise ActionError("La recherche d'images est vide.")
-        if engine not in SEARCH_IMAGE_URLS:
-            raise ActionError(f"Moteur inconnu : {engine} (disponibles : {', '.join(SEARCH_IMAGE_URLS)})")
-        url = SEARCH_IMAGE_URLS[engine].format(q=urllib.parse.quote(query))
+        url = _image_search_url(query, engine, license_filter)
         await self._goto(url)
         # laisse les vignettes se charger (lazy loading des moteurs d'images)
         await self.page.wait_for_timeout(2500)
@@ -535,7 +673,11 @@ async def perform_action(session: BrowserSession, action: str, params: dict) -> 
             elif action == "search":
                 await session.search(params.get("query", ""), params.get("engine", "google"))
             elif action == "image_search":
-                await session.image_search(params.get("query", ""), params.get("engine", "google"))
+                await session.image_search(
+                    params.get("query", ""),
+                    params.get("engine", "google"),
+                    params.get("license", "any"),
+                )
             elif action == "upload":
                 if not params.get("selector"):
                     raise ActionError("Il faut fournir 'selector' (un input[type=file] du snapshot).")

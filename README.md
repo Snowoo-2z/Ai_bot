@@ -96,9 +96,30 @@ Chaque action renvoie le **snapshot après coup**.
   contient `images: [{ url, thumb, alt, width, height }]` (jusqu'à 60 résultats,
   moteurs Google/Bing/DuckDuckGo). Avec `?with_data=1`, les 10 premières
   vignettes sont jointes en base64 (`data`) : le site appelant reçoit tout d'un coup.
+- **Recherche d'images avec filtre de licence** : ajoute `"license": "free"` ou
+  `"license": "commercial"` au body de `/imagesearch` (filtre "usage rights" de
+  Google/Bing). ⚠️ *Best effort : ce filtre repose sur ce que les sites déclarent,
+  ce n'est pas une garantie légale.* DuckDuckGo n'a pas ce filtre.
+- **Images librement réutilisables (recommandé)** : `POST /api/freeimages`
+  avec `{ "query": "…", "source": "openverse"|"commons"|"auto", "usage": "any"|"commercial", "limit": 10 }`.
+  → Openverse (Creative Commons) et Wikimedia Commons renvoient pour **chaque
+  image sa licence exacte et son URL** : le site appelant sait ce qu'il a le
+  droit de faire (affichage, attribution, usage commercial…). `usage: "commercial"`
+  exclut les licences non commerciales (NC). Aucune session navigateur requise.
 - **Envoi d'image dans une page** : `POST /api/session/{id}/upload` avec une URL
   ou du base64 → l'image est déposée dans le champ fichier (`input[type=file]`
   repéré dans le snapshot, même s'il est masqué visuellement).
+
+> ⚖️ **À propos des droits** : aucun outil ne peut *garantir* à 100 % qu'une
+> image est libre de droits. Les filtres "usage rights" des moteurs sont
+> approximatifs (déclarés par les uploaders). Pour des illustrations affichées
+> sur un site, le plus sûr est :
+> 1. les sources **Openverse** et **Wikimedia Commons** via `/api/freeimages`
+>    (licence connue et vérifiable) ;
+> 2. en mode "usage commercial", `/api/freeimages` avec `usage: "commercial"` ;
+> 3. respecter l'**attribution** demandée par la licence (CC BY, CC BY-SA…)
+>    — les URLs de licence sont fournies avec chaque résultat.
+> La responsabilité finale de l'usage d'une image reste au site qui l'affiche.
 
 ### Tâche autonome
 

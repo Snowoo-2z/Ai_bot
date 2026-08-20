@@ -24,6 +24,7 @@ from browser_api import (
     BrowserManager,
     SessionLimitError,
     SessionNotFoundError,
+    free_image_search,
     perform_action,
 )
 
@@ -41,6 +42,14 @@ class NavigateRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     engine: str = "google"
+    license: str = "any"  # any | free | commercial (filtre "usage rights" des moteurs)
+
+
+class FreeImageRequest(BaseModel):
+    query: str
+    source: str = "auto"   # openverse | commons | auto
+    usage: str = "any"     # any | free | commercial
+    limit: int = 10
 
 
 class UploadRequest(BaseModel):
@@ -279,6 +288,9 @@ async def search(session_id: str, req: SearchRequest):
 async def image_search(session_id: str, req: SearchRequest, with_data: bool = False):
     """Recherche d'images. Le snapshot renvoyé contient la liste `images`.
 
+    `license`: "any" (défaut) | "free" | "commercial" — filtre "usage rights"
+    du moteur (best effort, pas une garantie légale).
+
     Avec `?with_data=1`, les 10 premières vignettes sont aussi renvoyées en
     base64 (champ `data` de chaque image) : le site appelant reçoit directement
     le contenu des images, sans second appel.
@@ -350,6 +362,22 @@ async def generic_action(session_id: str, req: GenericActionRequest):
 
 
 # ─────────────────────────── Tâche autonome ───────────────────────────
+@app.post("/api/freeimages", dependencies=[Depends(require_key)])
+async def free_images(req: FreeImageRequest):
+    """Images librement réutilisables (Openverse CC / Wikimedia Commons).
+
+    Chaque image renvoyée inclut sa LICENCE exacte et l'URL de la licence :
+    le site appelant sait ce qu'il a le droit de faire (affichage, attribution,
+    usage commercial...). Aucune session navigateur requise.
+    """
+    try:
+        return await free_image_search(req.query, req.source, req.usage, req.limit)
+    except ActionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur : {e}")
+
+
 @app.post("/api/task", dependencies=[Depends(require_key)])
 async def run_task(req: TaskRequest):
     """Tâche autonome : {instruction} → recherche texte (résultats structurés)

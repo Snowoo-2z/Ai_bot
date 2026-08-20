@@ -43,6 +43,71 @@ class TestPureFunctions(unittest.TestCase):
         self.assertTrue(browser_api._is_engine_junk("duckduckgo", "https://duckduckgo.com/?q=test"))
         self.assertFalse(browser_api._is_engine_junk("duckduckgo", "https://exemple.fr/article"))
 
+    def test_image_search_url(self):
+        self.assertIn("tbm=isch", browser_api._image_search_url("chats", "google"))
+        self.assertTrue(browser_api._image_search_url("chats", "google", "free").endswith("&tbs=sur:f"))
+        self.assertTrue(browser_api._image_search_url("chats", "google", "commercial").endswith("&tbs=sur:fc"))
+        self.assertTrue(browser_api._image_search_url("chats", "bing", "free").endswith("&qft=+filterui:license-share"))
+        self.assertTrue(browser_api._image_search_url("chats", "bing", "commercial").endswith("&qft=+filterui:license-sharecommercial"))
+        self.assertNotIn("tbs=", browser_api._image_search_url("chats", "google", "any"))
+
+    def test_image_search_url_ddg_no_license(self):
+        with self.assertRaises(browser_api.ActionError):
+            browser_api._image_search_url("chats", "duckduckgo", "free")
+
+    def test_image_search_url_bad_engine(self):
+        with self.assertRaises(browser_api.ActionError):
+            browser_api._image_search_url("chats", "yahoo")
+
+    def test_parse_openverse(self):
+        data = {"results": [{"title": "Un chat", "url": "https://x.fr/cat.jpg", "thumbnail": "https://x.fr/cat_t.jpg",
+                             "license": "by", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                             "creator": "Jean", "source": "flickr"}]}
+        imgs = browser_api._parse_openverse(data)
+        self.assertEqual(len(imgs), 1)
+        self.assertEqual(imgs[0]["license"], "by")
+        self.assertEqual(imgs[0]["creator"], "Jean")
+
+    def test_parse_commons(self):
+        data = {
+            "query": {"pages": {
+                "1": {"title": "File:Chat.jpg", "imageinfo": [{
+                    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Chat.jpg",
+                    "thumburl": "https://commons.wikimedia.org/thumb/Chat.jpg/800px-Chat.jpg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "LicenseUrl": {"value": "https://creativecommons.org/licenses/by-sa/4.0/"},
+                        "Artist": {"value": "<a>Jean Dupont</a>"},
+                    },
+                }]},
+                "2": {"title": "File:Chien.jpg", "imageinfo": [{
+                    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Chien.jpg",
+                    "thumburl": "",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-NC 2.0"},
+                        "LicenseUrl": {"value": "https://creativecommons.org/licenses/by-nc/2.0/"},
+                    },
+                }]},
+            }}
+        }
+        all_imgs = browser_api._parse_commons(data, "any")
+        self.assertEqual(len(all_imgs), 2)
+        self.assertEqual(all_imgs[0]["creator"], "Jean Dupont")
+        self.assertEqual(all_imgs[0]["source"], "wikimedia_commons")
+        commercial = browser_api._parse_commons(data, "commercial")
+        self.assertEqual(len(commercial), 1)  # la licence NC est exclue
+        self.assertEqual(commercial[0]["license"], "CC BY-SA 4.0")
+
+    def test_free_image_search_validation(self):
+        async def run():
+            with self.assertRaises(browser_api.ActionError):
+                await browser_api.free_image_search("   ")
+            with self.assertRaises(browser_api.ActionError):
+                await browser_api.free_image_search("chats", source="inconnu")
+            with self.assertRaises(browser_api.ActionError):
+                await browser_api.free_image_search("chats", usage="bizarre")
+        asyncio.new_event_loop().run_until_complete(run())
+
 
 # ── Dispatch des actions (sessions factices) ─────────────────────────────
 class FakeSession:
@@ -68,8 +133,8 @@ class FakeSession:
     async def type_text(self, selector, text, submit=False, clear=False):
         self.calls.append(("type", selector, text, submit, clear))
 
-    async def image_search(self, query, engine):
-        self.calls.append(("image_search", query, engine))
+    async def image_search(self, query, engine, license_filter="any"):
+        self.calls.append(("image_search", query, engine, license_filter))
 
     async def upload(self, selector, url, data_base64, filename):
         self.calls.append(("upload", selector, url, data_base64, filename))
@@ -98,7 +163,12 @@ class TestPerformAction(unittest.TestCase):
     def test_image_search_dispatch(self):
         s = FakeSession()
         self.run_async(browser_api.perform_action(s, "image_search", {"query": "chats", "engine": "bing"}))
-        self.assertEqual(s.calls, [("image_search", "chats", "bing")])
+        self.assertEqual(s.calls, [("image_search", "chats", "bing", "any")])
+
+    def test_image_search_dispatch_license(self):
+        s = FakeSession()
+        self.run_async(browser_api.perform_action(s, "image_search", {"query": "chats", "engine": "google", "license": "commercial"}))
+        self.assertEqual(s.calls, [("image_search", "chats", "google", "commercial")])
 
     def test_upload_dispatch(self):
         s = FakeSession()
@@ -154,6 +224,14 @@ class TestAPI(unittest.TestCase):
     def test_task_empty(self):
         r = self.client.post("/api/task", json={"instruction": "   "}, headers={"x-api-key": "test-cle"})
         self.assertEqual(r.status_code, 400)
+
+    def test_freeimages_unauthorized_and_validation(self):
+        r = self.client.post("/api/freeimages", json={"query": "chats"})
+        self.assertEqual(r.status_code, 401)
+        r = self.client.post("/api/freeimages", json={"query": "   "}, headers={"x-api-key": "test-cle"})
+        self.assertEqual(r.status_code, 422)
+        r = self.client.post("/api/freeimages", json={"query": "chats", "source": "inconnu"}, headers={"x-api-key": "test-cle"})
+        self.assertEqual(r.status_code, 422)
 
 
 if __name__ == "__main__":
