@@ -82,13 +82,30 @@ Chaque action renvoie le **snapshot après coup**.
 | POST    | `/api/session/{id}/back`           | — |
 | POST    | `/api/session/{id}/forward`        | — |
 | POST    | `/api/session/{id}/reload`         | — |
+| POST    | `/api/session/{id}/imagesearch`    | `{ "query": "…", "engine": "…" }` — recherche d'images, résultats dans `snapshot.images` (`?with_data=1` : les 10 vignettes aussi en base64) |
+| POST    | `/api/session/{id}/upload`         | `{ "selector": "input[type=file]", "url": "https://…/image.png" }` ou `{ "selector": "…", "data_base64": "data:image/png;base64,…", "filename": "photo.png" }` — envoie une image dans un champ fichier |
 | POST    | `/api/session/{id}/action`         | `{ "action": "navigate", "url": "…", "screenshot": true }` — version générique |
+
+### Images
+
+- **Recevoir une image** : `GET /api/session/{id}/image?url=https://…` → binaire de
+  l'image (media-type détecté). Avec `?as_base64=1` → JSON
+  `{ ok, content_type, data: "data:image/…;base64,…" }`. Le téléchargement passe
+  par la session navigateur (mêmes cookies/IP que la page).
+- **Recherche d'images** : `POST /api/session/{id}/imagesearch` → le snapshot
+  contient `images: [{ url, thumb, alt, width, height }]` (jusqu'à 60 résultats,
+  moteurs Google/Bing/DuckDuckGo). Avec `?with_data=1`, les 10 premières
+  vignettes sont jointes en base64 (`data`) : le site appelant reçoit tout d'un coup.
+- **Envoi d'image dans une page** : `POST /api/session/{id}/upload` avec une URL
+  ou du base64 → l'image est déposée dans le champ fichier (`input[type=file]`
+  repéré dans le snapshot, même s'il est masqué visuellement).
 
 ### Tâche autonome
 
 | Méthode | Route      | Body | Description |
 |---------|------------|------|-------------|
 | POST    | `/api/task`| `{ "instruction": "cherche les meilleurs restaurants à Paris", "engine": "google" }` | Ouvre une session temporaire, fait la recherche, renvoie les 10 premiers résultats `{ title, url }` + le snapshot, puis ferme la session. |
+| POST    | `/api/task`| `{ "instruction": "cherche des photos de voiliers", "images": true }` | Même principe en mode **images** : renvoie `images: [{ url, thumb, … }]` au lieu des liens texte. |
 
 ### Snapshot (ce que l'API renvoie)
 
@@ -100,11 +117,13 @@ Chaque action renvoie le **snapshot après coup**.
   "buttons": [{ "text": "Tout accepter" }],
   "links":   [{ "text": "Titre du lien", "href": "https://…" }],
   "inputs":  [{ "type": "text", "placeholder": "Rechercher…", "selector": "input[placeholder=\"Rechercher…\"]", "value": "" }],
+  "images":  [{ "url": "https://…/photo.jpg", "thumb": "https://…/mini.jpg", "alt": "…", "width": 800, "height": 600 }],
   "screenshot": "data:image/png;base64,…"   // seulement si demandé
 }
 ```
 
-Le champ `selector` des inputs est prêt à être réutilisé dans `/type`.
+Le champ `selector` des inputs est prêt à être réutilisé dans `/type` et `/upload`
+(les champs `type: "file"` servent à l'envoi d'image).
 
 ## Exemples
 

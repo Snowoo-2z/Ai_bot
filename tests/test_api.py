@@ -68,6 +68,12 @@ class FakeSession:
     async def type_text(self, selector, text, submit=False, clear=False):
         self.calls.append(("type", selector, text, submit, clear))
 
+    async def image_search(self, query, engine):
+        self.calls.append(("image_search", query, engine))
+
+    async def upload(self, selector, url, data_base64, filename):
+        self.calls.append(("upload", selector, url, data_base64, filename))
+
 
 class TestPerformAction(unittest.TestCase):
     def run_async(self, coro):
@@ -88,6 +94,27 @@ class TestPerformAction(unittest.TestCase):
         s = FakeSession()
         snap = self.run_async(browser_api.perform_action(s, "navigate", {"url": "https://x.fr", "screenshot": True}))
         self.assertEqual(snap["screenshot"], None)  # pas de navigateur → pas de PNG, pas d'erreur
+
+    def test_image_search_dispatch(self):
+        s = FakeSession()
+        self.run_async(browser_api.perform_action(s, "image_search", {"query": "chats", "engine": "bing"}))
+        self.assertEqual(s.calls, [("image_search", "chats", "bing")])
+
+    def test_upload_dispatch(self):
+        s = FakeSession()
+        self.run_async(browser_api.perform_action(s, "upload", {"selector": "input[type=file]", "url": "https://x.fr/i.png"}))
+        self.assertEqual(s.calls, [("upload", "input[type=file]", "https://x.fr/i.png", None, None)])
+
+    def test_upload_without_source(self):
+        s = FakeSession()
+        with self.assertRaises(browser_api.ActionError):
+            self.run_async(browser_api.perform_action(s, "upload", {"selector": "input[type=file]"}))
+
+    def test_guess_ext(self):
+        self.assertEqual(browser_api._guess_ext("https://x.fr/photo.JPG?w=100"), ".jpg")
+        self.assertEqual(browser_api._guess_ext("https://x.fr/a.png"), ".png")
+        self.assertEqual(browser_api._guess_ext("https://x.fr/a", "image/webp"), ".webp")
+        self.assertEqual(browser_api._guess_ext("https://x.fr/a"), ".png")
 
 
 # ── Endpoints HTTP ───────────────────────────────────────────────────────

@@ -40,6 +40,35 @@ SEARCH_URLS = {
     "duckduckgo": "https://duckduckgo.com/?q={q}",
 }
 
+SEARCH_IMAGE_URLS = {
+    "google": "https://www.google.com/search?q={q}&tbm=isch",
+    "bing": "https://www.bing.com/images/search?q={q}",
+    "duckduckgo": "https://duckduckgo.com/?q={q}&iax=images&ia=images",
+}
+
+# Extension de fichier déduite d'une URL ou d'un content-type
+_CTYPE_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+}
+
+
+def _guess_ext(url: str = "", content_type: str = "") -> str:
+    """Devine l'extension d'une image à partir de son URL ou de son content-type."""
+    m = re.search(r"\.(png|jpe?g|gif|webp|avif|bmp|svg)$", (url or "").split("?")[0].lower())
+    if m:
+        ext = m.group(1)
+        return ".jpg" if ext == "jpeg" else "." + ext
+    for ctype, ext in _CTYPE_EXT.items():
+        if ctype in (content_type or "").lower():
+            return ext
+    return ".png"
+
 # ─────────────────────────── Erreurs ───────────────────────────
 class BrowserError(Exception):
     """Erreur générique du navigateur distant."""
@@ -59,9 +88,9 @@ class ActionError(BrowserError):
 
 # ─────────────────── Extraction de l'état visible (snapshot) ───────────────────
 # Renvoie ce qu'un humain "voit" sur la page : titre, URL, blocs de texte,
-# boutons, liens et champs de saisie.
+# boutons, liens, champs de saisie et images.
 SNAPSHOT_JS = r"""() => {
-    const MAX_TEXTS = 40, MAX_LINKS = 60, MAX_BUTTONS = 60, MAX_INPUTS = 30;
+    const MAX_TEXTS = 40, MAX_LINKS = 60, MAX_BUTTONS = 60, MAX_INPUTS = 30, MAX_IMAGES = 60;
     const isVisible = (el) => {
         const r = el.getBoundingClientRect();
         const s = getComputedStyle(el);
@@ -107,22 +136,56 @@ SNAPSHOT_JS = r"""() => {
     const inputs = [];
     document.querySelectorAll('input, textarea, select').forEach((el) => {
         if (inputs.length >= MAX_INPUTS) return;
-        if (!isVisible(el)) return;
-        const type = el.type || (el.tagName === 'TEXTAREA' ? 'textarea' : el.tagName === 'SELECT' ? 'select' : 'text');
-        if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file'].includes(type)) return;
+        const tag = el.tagName;
+        const type = el.type || (tag === 'TEXTAREA' ? 'textarea' : tag === 'SELECT' ? 'select' : 'text');
+        if (['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(type)) return;
+        // les inputs fichier sont souvent masqués visuellement mais restent utilisables
+        if (type !== 'file' && !isVisible(el)) return;
         let selector = '';
         if (el.id) selector = '#' + CSS.escape(el.id);
         else if (el.name) selector = el.tagName.toLowerCase() + '[name="' + String(el.name).replace(/"/g, '\\"') + '"]';
         else if (el.placeholder) selector = el.tagName.toLowerCase() + '[placeholder="' + String(el.placeholder).replace(/"/g, '\\"') + '"]';
         inputs.push({
             type,
-            placeholder: String(el.placeholder || el.getAttribute('aria-label') || el.name || '').slice(0, 100),
+            placeholder: String(el.placeholder || el.getAttribute('aria-label') || el.name || (type === 'file' ? 'fichier' : '')).slice(0, 100),
             selector,
             value: String(el.value || '').slice(0, 100),
         });
     });
 
-    return { title: document.title, texts, buttons, links, inputs };
+    const images = [];
+    const seenImages = new Set();
+    const pushImg = (url, thumb, alt, w, h) => {
+        if (!url || images.length >= MAX_IMAGES) return;
+        if (url.startsWith('data:') || url.length > 4000) return;
+        if (seenImages.has(url)) return;
+        seenImages.add(url);
+        images.push({ url, thumb: thumb || url, alt: alt || '', width: w || 0, height: h || 0 });
+    };
+    // Bing Images : <a class="iusc" data-m='{"murl":"...","turl":"...","t":"..."}'>
+    document.querySelectorAll('a[data-m]').forEach((a) => {
+        try {
+            const d = JSON.parse(a.getAttribute('data-m'));
+            if (d && d.murl) pushImg(d.murl, d.turl, d.t || '', d.mw, d.mh);
+        } catch (e) {}
+    });
+    // Google Images : img[data-iurl] = URL directe de l'image, img[data-src] = lazy loading
+    document.querySelectorAll('img[data-iurl]').forEach((img) => {
+        pushImg(img.getAttribute('data-iurl'), img.currentSrc || img.src, img.alt, img.naturalWidth, img.naturalHeight);
+    });
+    document.querySelectorAll('img[data-src]').forEach((img) => {
+        const r = img.getBoundingClientRect();
+        if (r.width < 60 || r.height < 60) return;
+        pushImg(img.getAttribute('data-src'), img.currentSrc || img.src, img.alt, img.naturalWidth, img.naturalHeight);
+    });
+    // Générique : images visibles assez grandes (logos, icônes exclus)
+    document.querySelectorAll('img').forEach((img) => {
+        const r = img.getBoundingClientRect();
+        if (r.width < 80 || r.height < 80) return;
+        pushImg(img.currentSrc || img.src, img.src, img.alt, img.naturalWidth, img.naturalHeight);
+    });
+
+    return { title: document.title, texts, buttons, links, inputs, images };
 }"""
 
 
@@ -227,6 +290,84 @@ class BrowserSession:
             raise ActionError(f"Moteur inconnu : {engine} (disponibles : {', '.join(SEARCH_URLS)})")
         url = SEARCH_URLS[engine].format(q=urllib.parse.quote(query))
         await self._goto(url)
+
+    async def image_search(self, query: str, engine: str = "google"):
+        """Recherche d'images (Google Images / Bing Images / DuckDuckGo Images).
+
+        Le snapshot renvoyé contient la liste `images` : {url, thumb, alt, width, height}.
+        """
+        query = (query or "").strip()
+        if not query:
+            raise ActionError("La recherche d'images est vide.")
+        if engine not in SEARCH_IMAGE_URLS:
+            raise ActionError(f"Moteur inconnu : {engine} (disponibles : {', '.join(SEARCH_IMAGE_URLS)})")
+        url = SEARCH_IMAGE_URLS[engine].format(q=urllib.parse.quote(query))
+        await self._goto(url)
+        # laisse les vignettes se charger (lazy loading des moteurs d'images)
+        await self.page.wait_for_timeout(2500)
+        await self._human_scroll_peek()
+
+    async def _human_scroll_peek(self):
+        """Petit défilement pour déclencher le lazy loading des images."""
+        try:
+            await self.page.mouse.wheel(0, 500)
+            await self.page.wait_for_timeout(1200)
+            await self.page.mouse.wheel(0, 500)
+            await self.page.wait_for_timeout(800)
+            await self.page.evaluate("window.scrollTo(0, 0)")
+            await self.page.wait_for_timeout(400)
+        except Exception:
+            pass
+
+    async def upload(self, selector: str, url: str = None, data_base64: str = None, filename: str = None):
+        """Envoie une image (URL ou base64) dans un champ fichier de la page."""
+        if not selector:
+            raise ActionError("Il faut fournir 'selector' (un input[type=file] du snapshot).")
+        if not url and not data_base64:
+            raise ActionError("Il faut fournir 'url' ou 'data_base64'.")
+
+        import base64 as _b64
+        import binascii
+
+        body = b""
+        ext = ""
+        if url:
+            resp = await self.context.request.get(url.strip(), timeout=NAV_TIMEOUT)
+            if not resp.ok:
+                raise ActionError(f"Téléchargement de l'image échoué : HTTP {resp.status}")
+            body = await resp.body()
+            ext = _guess_ext(url, resp.headers.get("content-type", ""))
+        else:
+            raw = data_base64.split(",", 1)[-1] if "," in data_base64 else data_base64
+            try:
+                body = _b64.b64decode(raw)
+            except (binascii.Error, ValueError) as e:
+                raise ActionError(f"data_base64 invalide : {e}") from e
+            ext = _guess_ext(data_base64.split(",", 1)[0], "")
+
+        name = (filename or "").strip()
+        if name:
+            import posixpath
+            name = posixpath.basename(name)
+            if not re.search(r"\.\w+$", name):
+                name += ext
+        else:
+            name = "upload" + ext
+
+        tmp_path = os.path.join("/tmp", f"upload_{uuid.uuid4().hex[:8]}_{name}")
+        with open(tmp_path, "wb") as f:
+            f.write(body)
+        try:
+            loc = self.page.locator(selector).first
+            await loc.set_input_files(tmp_path, timeout=8000)
+        except PlaywrightTimeoutError as e:
+            raise ActionError(f"Champ fichier introuvable/inaccessible ({selector}) : {e}") from e
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        await self.page.wait_for_timeout(600)
 
     async def click(self, selector: str = None, text: str = None):
         if selector:
@@ -393,6 +534,19 @@ async def perform_action(session: BrowserSession, action: str, params: dict) -> 
                 await session.navigate(params.get("url", ""))
             elif action == "search":
                 await session.search(params.get("query", ""), params.get("engine", "google"))
+            elif action == "image_search":
+                await session.image_search(params.get("query", ""), params.get("engine", "google"))
+            elif action == "upload":
+                if not params.get("selector"):
+                    raise ActionError("Il faut fournir 'selector' (un input[type=file] du snapshot).")
+                if not params.get("url") and not params.get("data_base64"):
+                    raise ActionError("Il faut fournir 'url' ou 'data_base64'.")
+                await session.upload(
+                    params.get("selector", ""),
+                    params.get("url"),
+                    params.get("data_base64"),
+                    params.get("filename"),
+                )
             elif action == "click":
                 await session.click(params.get("selector"), params.get("text"))
             elif action == "type":
@@ -415,7 +569,8 @@ async def perform_action(session: BrowserSession, action: str, params: dict) -> 
             else:
                 raise ActionError(
                     f"Action inconnue : '{action}'. Actions : "
-                    "navigate, search, click, type, press, scroll, back, forward, reload."
+                    "navigate, search, image_search, upload, click, type, press, "
+                    "scroll, back, forward, reload."
                 )
         except PlaywrightTimeoutError as e:
             raise ActionError(f"Timeout pendant l'action '{action}' : {e}") from e

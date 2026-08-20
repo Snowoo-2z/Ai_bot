@@ -6,6 +6,7 @@ Chromium et renvoie ce que la page affiche : textes, boutons, liens,
 champs de saisie et capture d'écran.
 """
 import asyncio
+import base64
 import os
 import re
 import time
@@ -42,6 +43,13 @@ class SearchRequest(BaseModel):
     engine: str = "google"
 
 
+class UploadRequest(BaseModel):
+    selector: str
+    url: str = None
+    data_base64: str = None
+    filename: str = None
+
+
 class ClickRequest(BaseModel):
     selector: str = None
     text: str = None
@@ -72,10 +80,11 @@ class GenericActionRequest(BaseModel):
 
 
 class TaskRequest(BaseModel):
-    """Tâche autonome : {instruction, engine?} — fait la recherche et renvoie les résultats."""
+    """Tâche autonome : {instruction, engine?, images?} — recherche texte ou images."""
 
     instruction: str
     engine: str = "google"
+    images: bool = False
 
 
 # ─────────────────────────── Auth & erreurs ───────────────────────────
@@ -216,6 +225,35 @@ async def get_screenshot(session_id: str, full: bool = False):
                     headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/session/{session_id}/image", dependencies=[Depends(require_key)])
+async def fetch_image(session_id: str, url: str, as_base64: bool = False):
+    """Télécharge une image via la session navigateur et la renvoie.
+
+    - Par défaut : binaire (media-type détecté) — le site appelant reçoit le fichier.
+    - `?as_base64=1` : JSON `{ ok, content_type, data: "data:image/...;base64,..." }`.
+    """
+    try:
+        session = manager.get(session_id)
+        resp = await session.context.request.get(url, timeout=NAV_TIMEOUT)
+        if not resp.ok:
+            raise HTTPException(status_code=502, detail=f"Téléchargement échoué : HTTP {resp.status}")
+        body = await resp.body()
+        ctype = resp.headers.get("content-type", "image/png").split(";")[0]
+    except SessionNotFoundError as e:
+        raise _http_error(e)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erreur de téléchargement : {e}")
+    if as_base64:
+        return {
+            "ok": True,
+            "content_type": ctype,
+            "data": f"data:{ctype};base64," + base64.b64encode(body).decode(),
+        }
+    return Response(content=body, media_type=ctype, headers={"Cache-Control": "no-store"})
+
+
 @app.delete("/api/session/{session_id}", dependencies=[Depends(require_key)])
 async def delete_session(session_id: str):
     try:
@@ -235,6 +273,36 @@ async def navigate(session_id: str, req: NavigateRequest):
 @app.post("/api/session/{session_id}/search", dependencies=[Depends(require_key)])
 async def search(session_id: str, req: SearchRequest):
     return await _run_action(session_id, "search", req.model_dump())
+
+
+@app.post("/api/session/{session_id}/imagesearch", dependencies=[Depends(require_key)])
+async def image_search(session_id: str, req: SearchRequest, with_data: bool = False):
+    """Recherche d'images. Le snapshot renvoyé contient la liste `images`.
+
+    Avec `?with_data=1`, les 10 premières vignettes sont aussi renvoyées en
+    base64 (champ `data` de chaque image) : le site appelant reçoit directement
+    le contenu des images, sans second appel.
+    """
+    result = await _run_action(session_id, "image_search", req.model_dump())
+    if with_data:
+        session = manager.get(session_id)
+        for img in result["snapshot"].get("images", [])[:10]:
+            try:
+                resp = await session.context.request.get(img.get("thumb") or img["url"], timeout=15000)
+                if resp.ok:
+                    body = await resp.body()
+                    if len(body) <= 2_000_000:
+                        ctype = resp.headers.get("content-type", "image/jpeg").split(";")[0]
+                        img["data"] = "data:" + ctype + ";base64," + base64.b64encode(body).decode()
+            except Exception:
+                continue
+    return result
+
+
+@app.post("/api/session/{session_id}/upload", dependencies=[Depends(require_key)])
+async def upload(session_id: str, req: UploadRequest):
+    """Envoie une image (URL ou base64) dans un champ fichier de la page."""
+    return await _run_action(session_id, "upload", req.model_dump())
 
 
 @app.post("/api/session/{session_id}/click", dependencies=[Depends(require_key)])
@@ -284,8 +352,8 @@ async def generic_action(session_id: str, req: GenericActionRequest):
 # ─────────────────────────── Tâche autonome ───────────────────────────
 @app.post("/api/task", dependencies=[Depends(require_key)])
 async def run_task(req: TaskRequest):
-    """Recherche autonome : {instruction} → fait la recherche et renvoie les
-    résultats (titre + URL) plus le snapshot de la page de résultats."""
+    """Tâche autonome : {instruction} → recherche texte (résultats structurés)
+    ou recherche d'images (`images: true` → liste d'images)."""
     query = _extract_query(req.instruction)
     if not query:
         raise HTTPException(status_code=400, detail="L'instruction est vide.")
@@ -295,6 +363,17 @@ async def run_task(req: TaskRequest):
     session = None
     try:
         session = await manager.create_session()
+        if req.images:
+            await session.image_search(query, req.engine)
+            snap = await session.snapshot()
+            return {
+                "ok": True,
+                "instruction": req.instruction,
+                "query": query,
+                "engine": req.engine,
+                "images": snap.get("images", []),
+                "snapshot": snap,
+            }
         await session.search(query, req.engine)
         snap = await session.snapshot()
         results = []
