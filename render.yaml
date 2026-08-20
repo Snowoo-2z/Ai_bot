@@ -1,14 +1,10 @@
 services:
   - type: web
-    name: bot_arena_hrv
+    name: ai_remote_browser
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      - key: ARENA_EMAIL
-        sync: false
-      - key: ARENA_PASSWORD
-        sync: false
-      - key: MY_SECRET_KEY
+      - key: API_KEY
         sync: false

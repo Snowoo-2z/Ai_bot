@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mon Bot Arena</title>
+<title>Navigateur IA à distance — Console</title>
 <style>
   :root {
     --bg: #0b0e17;
@@ -15,15 +15,11 @@
     --text-dim: #8b93a7;
     --accent: #6366f1;
     --accent-2: #a855f7;
-    --user-bubble: linear-gradient(135deg, #6366f1, #8b5cf6);
-    --bot-bubble: rgba(255, 255, 255, 0.06);
     --ok: #34d399;
     --err: #f87171;
     --warn: #fbbf24;
   }
-
   * { box-sizing: border-box; }
-
   body {
     margin: 0;
     min-height: 100vh;
@@ -33,461 +29,391 @@
       radial-gradient(900px 500px at 12% -10%, var(--bg-glow-1), transparent 60%),
       radial-gradient(800px 500px at 100% 0%, var(--bg-glow-2), transparent 55%),
       var(--bg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     padding: 24px 16px;
   }
-
-  .app {
-    width: 100%;
-    max-width: 720px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  header {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 4px 6px;
-  }
-
+  .app { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  header { display: flex; align-items: center; gap: 14px; padding: 4px 6px; }
   .logo {
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
-    display: grid;
-    place-items: center;
-    font-size: 24px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center;
+    font-size: 24px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
     box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
   }
-
-  header h1 {
-    font-size: 20px;
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  header .sub {
-    font-size: 12.5px;
-    color: var(--text-dim);
-    margin-top: 2px;
-  }
-
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.02em; }
+  header .sub { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
   .status-pill {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12px;
-    color: var(--text-dim);
-    background: var(--card);
-    border: 1px solid var(--border);
-    padding: 7px 12px;
-    border-radius: 999px;
+    margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 12px;
+    color: var(--text-dim); background: var(--card); border: 1px solid var(--border);
+    padding: 7px 12px; border-radius: 999px;
   }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--ok);
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
-    70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
-  }
-
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 2s infinite; }
+  .dot.err { background: var(--err); box-shadow: none; animation: none; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.5); } 70% { box-shadow: 0 0 0 7px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
   .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    padding: 16px;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 14px 16px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   }
-
-  .settings {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); display: block; margin-bottom: 6px; }
+  input[type="password"], input[type="text"], select, textarea {
+    background: rgba(0, 0, 0, 0.28); border: 1px solid var(--border); border-radius: 12px;
+    color: var(--text); padding: 10px 12px; font-size: 14px; font-family: inherit;
+    outline: none; transition: border-color .15s, box-shadow .15s;
   }
-
-  label {
-    font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    display: block;
-    margin-bottom: 6px;
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.25); }
+  select option { background: #141828; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1; min-width: 140px; }
+  button {
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.06); color: var(--text);
+    padding: 10px 14px; border-radius: 12px; font-size: 13.5px; cursor: pointer; font-family: inherit;
+    transition: transform .12s, border-color .12s, background .12s, opacity .12s;
   }
-
-  input[type="password"], textarea {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    color: var(--text);
-    padding: 12px 14px;
-    font-size: 14px;
-    font-family: inherit;
-    resize: vertical;
-    transition: border-color .15s, box-shadow .15s;
+  button:hover { border-color: var(--accent); background: rgba(99, 102, 241, 0.15); transform: translateY(-1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: none; color: #fff;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.35);
   }
-
-  input[type="password"]:focus, textarea:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  button.primary:hover { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  button.small { padding: 6px 10px; font-size: 12.5px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .shot-box { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,.3); min-height: 320px; display: grid; place-items: center; color: var(--text-dim); font-size: 13px; overflow: hidden; }
+  .shot-box img { width: 100%; display: block; }
+  .url-line { font-size: 12px; color: var(--accent); word-break: break-all; margin: 4px 0 10px; }
+  .section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin: 14px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    background: rgba(99, 102, 241, 0.14); border: 1px solid rgba(99, 102, 241, 0.35);
+    color: var(--text); border-radius: 999px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-
-  #chatbox {
-    height: 400px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 6px 4px;
-    scroll-behavior: smooth;
-  }
-
-  #chatbox::-webkit-scrollbar { width: 8px; }
-  #chatbox::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
-
-  .row {
-    display: flex;
-    gap: 10px;
-  }
-  .row.user { justify-content: flex-end; }
-
-  .avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 15px;
-    flex-shrink: 0;
-  }
-  .row.bot .avatar { background: rgba(99,102,241,0.18); }
-  .row.user .avatar { background: rgba(168,85,247,0.18); order: 2; }
-
-  .bubble {
-    max-width: 78%;
-    padding: 11px 15px;
-    border-radius: 16px;
-    font-size: 14.5px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .row.bot .bubble { background: var(--bot-bubble); border: 1px solid var(--border); border-top-left-radius: 6px; }
-  .row.user .bubble { background: var(--user-bubble); border-top-right-radius: 6px; box-shadow: 0 6px 18px rgba(99,102,241,0.35); }
-
-  .bubble .name {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    margin-bottom: 4px;
-    opacity: 0.7;
-  }
-
-  .bubble.err { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.35); }
-
-  .typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
-  .typing i {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--text-dim);
-    animation: blink 1.4s infinite both;
-  }
-  .typing i:nth-child(2) { animation-delay: .2s; }
-  .typing i:nth-child(3) { animation-delay: .4s; }
-  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-
-  .status-msg {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    padding: 6px 2px;
-  }
-  .status-msg .spinner {
-    width: 14px; height: 14px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,0.15);
-    border-top-color: var(--accent);
-    animation: spin .8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: rgba(251, 191, 36, 0.15);
-    color: var(--warn);
-  }
-
-  .composer {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-  }
-  .composer textarea { resize: none; min-height: 52px; max-height: 160px; }
-
-  button#send {
-    border: none;
-    cursor: pointer;
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    font-size: 20px;
-    color: #fff;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
-    transition: transform .12s, box-shadow .12s, opacity .12s;
-  }
-  button#send:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(99,102,241,0.5); }
-  button#send:active { transform: translateY(0); }
-  button#send:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-
-  .hint {
-    text-align: center;
-    font-size: 11.5px;
-    color: var(--text-dim);
-    opacity: 0.75;
-  }
-
-  .empty {
-    margin: auto;
-    text-align: center;
-    color: var(--text-dim);
-    font-size: 13.5px;
-    line-height: 1.7;
-  }
-  .empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
-
-  @media (max-width: 520px) {
-    .status-pill span.txt { display: none; }
-    .bubble { max-width: 86%; }
-  }
+  .chip:hover { background: rgba(99, 102, 241, 0.3); }
+  .link-item { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px dashed rgba(255,255,255,.07); font-size: 13px; }
+  .link-item a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .link-item a:hover { text-decoration: underline; }
+  .link-item .u { color: var(--text-dim); font-size: 11.5px; word-break: break-all; flex: 1; min-width: 0; }
+  .input-item { font-size: 12.5px; padding: 4px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .input-item code { background: rgba(255,255,255,.07); border-radius: 6px; padding: 2px 7px; font-size: 11.5px; color: var(--warn); }
+  .text-block { font-size: 13px; line-height: 1.55; color: var(--text); background: rgba(0,0,0,.2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto; }
+  .notice { font-size: 12.5px; color: var(--err); padding: 6px 2px; }
+  .muted { color: var(--text-dim); font-size: 12px; }
+  .empty { text-align: center; color: var(--text-dim); font-size: 13.5px; padding: 24px 10px; line-height: 1.7; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(251,191,36,.15); color: var(--warn); }
+  details { font-size: 13px; }
+  details summary { cursor: pointer; color: var(--text-dim); font-size: 12.5px; padding: 4px 0; }
 </style>
 </head>
 <body>
   <div class="app">
     <header>
-      <div class="logo">🤖</div>
+      <div class="logo">🧭</div>
       <div>
-        <h1>Mon Bot Arena</h1>
-        <div class="sub">Connecté à arena.ai — file d'attente intelligente</div>
+        <h1>Navigateur IA à distance</h1>
+        <div class="sub">API de contrôle de navigateur — console de test</div>
       </div>
-      <div class="status-pill"><span class="dot"></span><span class="txt">En ligne</span></div>
+      <div class="status-pill"><span class="dot" id="dot"></span><span class="txt" id="healthTxt">Connexion…</span></div>
     </header>
 
-    <div class="card settings">
-      <div>
-        <label for="apiKey">Clé API secrète</label>
-        <input type="password" id="apiKey" placeholder="Entre ta clé API…">
-      </div>
-      <div>
-        <label for="systemPrompt">System prompt <span style="text-transform:none; opacity:.7;">(optionnel)</span></label>
-        <textarea id="systemPrompt" rows="2" placeholder="Instructions système pour l'IA…"></textarea>
-      </div>
-    </div>
-
     <div class="card">
-      <div id="chatbox">
-        <div class="empty" id="emptyState">
-          <span class="big">💬</span>
-          Commence une conversation.<br>
-          Ton message sera ajouté à la file et traité automatiquement.
+      <div class="row">
+        <div class="grow">
+          <label for="apiKey">Clé API (x-api-key)</label>
+          <input type="password" id="apiKey" placeholder="Ta clé API…" style="width:100%">
+        </div>
+        <div>
+          <label for="sessionSel">Session navigateur</label>
+          <div class="row">
+            <select id="sessionSel" style="min-width: 220px"><option value="">— aucune —</option></select>
+            <button class="primary" onclick="newSession()">＋ Nouvelle</button>
+            <button onclick="closeSession()" title="Fermer la session">🗑️</button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <div class="composer">
-        <textarea id="prompt" rows="1" placeholder="Ton message… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)"></textarea>
-        <button id="send" onclick="sendMessage()" title="Envoyer">➤</button>
+      <div class="row">
+        <input type="text" id="urlBar" class="grow" placeholder="URL… (ex: https://example.com)" onkeydown="if(event.key==='Enter')navigate()">
+        <button onclick="navigate()">Aller ➤</button>
+        <input type="text" id="searchBox" class="grow" placeholder="Rechercher sur le web…" onkeydown="if(event.key==='Enter')searchWeb()">
+        <select id="engineSel" style="width:130px">
+          <option value="google">Google</option>
+          <option value="duckduckgo">DuckDuckGo</option>
+          <option value="bing">Bing</option>
+        </select>
+        <button onclick="searchWeb()">🔎 Chercher</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="small" onclick="act('back')" title="Page précédente">◀</button>
+        <button class="small" onclick="act('forward')" title="Page suivante">▶</button>
+        <button class="small" onclick="act('reload')" title="Recharger">⟳</button>
+        <span style="flex:1"></span>
+        <button class="small" onclick="refreshShot()">📸 Screenshot</button>
+        <button class="small" onclick="refreshSnap()">🔄 Snapshot</button>
       </div>
     </div>
 
-    <div class="hint">Une seule demande est traitée à la fois · ta place dans la file s'affiche en direct</div>
+    <div class="grid">
+      <div class="card">
+        <label>Ce que le navigateur voit</label>
+        <div class="shot-box" id="shotBox"><span>Crée une session pour voir l'écran du navigateur.</span></div>
+        <div class="url-line" id="urlLine"></div>
+      </div>
+
+      <div class="card" style="max-height: 78vh; overflow-y: auto;">
+        <label>Snapshot (ce que l'API renvoie)</label>
+        <div id="snapArea"><div class="empty">Aucune session active.<br>Clique « ＋ Nouvelle » pour ouvrir un navigateur.</div></div>
+      </div>
+    </div>
+
+    <div class="muted" style="text-align:center; opacity:.7">
+      Console de test de l'API — les vraies intégrations passent par <code>POST /api/session/{id}/action</code> avec le header <code>x-api-key</code>.
+    </div>
   </div>
 
 <script>
-  const chatbox = document.getElementById('chatbox');
-  const promptEl = document.getElementById('prompt');
-  const sendBtn = document.getElementById('send');
+  const $ = id => document.getElementById(id);
+  let currentSession = null;
 
-  function escapeHtml(str) {
-    return String(str ?? '').replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
+  function key() { return $('apiKey').value.trim(); }
+  function saveKey() { localStorage.setItem('rb_key', key()); }
+
+  function headers() {
+    const h = { 'Content-Type': 'application/json' };
+    const k = key();
+    if (k) h['x-api-key'] = k;
+    return h;
   }
 
-  function clearEmpty() {
-    const e = document.getElementById('emptyState');
-    if (e) e.remove();
-  }
-
-  function addUser(msg) {
-    clearEmpty();
-    chatbox.innerHTML += `
-      <div class="row user">
-        <div class="bubble"><div class="name">Toi</div>${escapeHtml(msg)}</div>
-        <div class="avatar">🙂</div>
-      </div>`;
-    scrollDown();
-  }
-
-  function addBot(msg, isErr) {
-    const cls = isErr ? 'bubble err' : 'bubble';
-    chatbox.innerHTML += `
-      <div class="row bot">
-        <div class="avatar">🤖</div>
-        <div class="${cls}"><div class="name">IA</div>${escapeHtml(msg)}</div>
-      </div>`;
-    scrollDown();
-  }
-
-  function addStatus() {
-    clearEmpty();
-    const id = 'status-' + Date.now();
-    chatbox.innerHTML += `
-      <div class="row bot" id="${id}">
-        <div class="avatar">🤖</div>
-        <div class="bubble">
-          <div class="status-msg">
-            <span class="spinner"></span>
-            <span class="lbl">Ajout à la file…</span>
-          </div>
-        </div>
-      </div>`;
-    scrollDown();
-    return id;
-  }
-
-  function updateStatus(id, label, badgeText) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const lbl = el.querySelector('.lbl');
-    if (lbl) lbl.textContent = label;
-    if (badgeText) {
-      if (!el.querySelector('.badge')) {
-        const b = document.createElement('span');
-        b.className = 'badge';
-        lbl.after(b);
-      }
-      el.querySelector('.badge').textContent = badgeText;
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: headers() });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.error)) || ('Erreur HTTP ' + res.status);
+      throw new Error(msg);
     }
-  }
-
-  function removeStatus(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
-  }
-
-  function scrollDown() {
-    chatbox.scrollTop = chatbox.scrollHeight;
+    return data;
   }
 
   function notice(msg) {
-    clearEmpty();
-    chatbox.innerHTML += `
-      <div class="row bot">
-        <div class="avatar">⚠️</div>
-        <div class="bubble err">${escapeHtml(msg)}</div>
-      </div>`;
-    scrollDown();
+    const el = document.createElement('div');
+    el.className = 'notice';
+    el.textContent = '⚠️ ' + msg;
+    const area = $('snapArea');
+    area.prepend(el);
+    setTimeout(() => el.remove(), 6000);
   }
 
-  async function sendMessage() {
-    const prompt = promptEl.value.trim();
-    const systemPrompt = document.getElementById('systemPrompt').value.trim();
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) { notice("Entre d'abord ta clé API secrète."); document.getElementById('apiKey').focus(); return; }
-    if (!prompt) { notice("Écris un message avant d'envoyer."); promptEl.focus(); return; }
-
-    addUser(prompt);
-    promptEl.value = '';
-    promptEl.style.height = 'auto';
-
-    const statusId = addStatus();
-    sendBtn.disabled = true;
-
+  async function checkHealth() {
     try {
-      const res = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-        body: JSON.stringify({ prompt, system_prompt: systemPrompt })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        removeStatus(statusId);
-        addBot(data.detail || data.error || 'Erreur inconnue', true);
-        return;
-      }
-      await pollStatus(data.job_id, statusId);
-    } catch (err) {
-      removeStatus(statusId);
-      addBot('Erreur réseau: ' + err, true);
-    } finally {
-      sendBtn.disabled = false;
+      const r = await fetch('/health');
+      const d = await r.json();
+      $('dot').className = 'dot';
+      $('healthTxt').textContent = 'En ligne · ' + (d.sessions || 0) + ' session(s)';
+    } catch (e) {
+      $('dot').className = 'dot err';
+      $('healthTxt').textContent = 'Hors ligne';
     }
   }
 
-  async function pollStatus(jobId, statusId) {
-    while (true) {
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        const res = await fetch('/status/' + jobId);
-        if (!res.ok) continue;
-        const s = await res.json();
-
-        if (s.status === 'done') {
-          removeStatus(statusId);
-          addBot(s.result, false);
-          break;
-        } else if (s.status === 'error') {
-          removeStatus(statusId);
-          addBot(s.error, true);
-          break;
-        } else if (s.status === 'processing') {
-          updateStatus(statusId, '🤖 Traitement en cours…');
-        } else {
-          updateStatus(statusId, "En file d'attente", `place ${s.position ?? '?'}`);
-        }
-      } catch (err) {
-        // erreur réseau passagère : on continue de poller
+  async function refreshSessions() {
+    try {
+      const d = await api('/api/sessions');
+      const sel = $('sessionSel');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">— aucune —</option>';
+      for (const s of d.sessions) {
+        const opt = document.createElement('option');
+        opt.value = s.session_id;
+        opt.textContent = s.session_id + ' · ' + (s.title || s.url || 'nouvelle');
+        sel.appendChild(opt);
       }
-      scrollDown();
+      if (d.sessions.some(s => s.session_id === currentSession)) sel.value = currentSession;
+      else if (prev && d.sessions.some(s => s.session_id === prev)) sel.value = prev;
+      currentSession = sel.value || null;
+      if (currentSession) {
+        $('urlBar').value = d.sessions.find(s => s.session_id === currentSession)?.url || '';
+        refreshSnap();
+      } else {
+        $('snapArea').innerHTML = '<div class="empty">Aucune session active.<br>Clique « ＋ Nouvelle » pour ouvrir un navigateur.</div>';
+        $('shotBox').innerHTML = '<span>Crée une session pour voir l\'écran du navigateur.</span>';
+        $('urlLine').textContent = '';
+      }
+    } catch (e) {
+      if (String(e.message).includes('401') || String(e.message).includes('Clé')) notice('Clé API invalide : ' + e.message);
     }
   }
 
-  // Entrée = envoyer · Maj+Entrée = nouvelle ligne · auto-redimensionnement du champ
-  promptEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+  function requireSession() {
+    const s = $('sessionSel').value;
+    if (!s) { notice('Ouvre d\'abord une session navigateur.'); return null; }
+    return s;
+  }
+
+  async function newSession() {
+    try {
+      const d = await api('/api/session', { method: 'POST', body: '{}' });
+      currentSession = d.session_id;
+      $('sessionSel').value = d.session_id;
+      renderSnap(d.snapshot);
+      refreshSessions();
+    } catch (e) { notice(e.message); }
+  }
+
+  async function closeSession() {
+    const s = requireSession(); if (!s) return;
+    try {
+      await api('/api/session/' + s, { method: 'DELETE' });
+      currentSession = null;
+      refreshSessions();
+    } catch (e) { notice(e.message); }
+  }
+
+  async function navigate() {
+    const s = requireSession(); if (!s) return;
+    const url = $('urlBar').value.trim();
+    if (!url) return;
+    try {
+      const d = await api('/api/session/' + s + '/navigate', { method: 'POST', body: JSON.stringify({ url }) });
+      renderSnap(d.snapshot);
+    } catch (e) { notice(e.message); }
+  }
+
+  async function searchWeb() {
+    const s = requireSession(); if (!s) return;
+    const q = $('searchBox').value.trim();
+    if (!q) return;
+    try {
+      const d = await api('/api/session/' + s + '/search', { method: 'POST', body: JSON.stringify({ query: q, engine: $('engineSel').value }) });
+      renderSnap(d.snapshot);
+    } catch (e) { notice(e.message); }
+  }
+
+  async function act(action) {
+    const s = requireSession(); if (!s) return;
+    try {
+      const d = await api('/api/session/' + s + '/' + action, { method: 'POST', body: '{}' });
+      renderSnap(d.snapshot);
+    } catch (e) { notice(e.message); }
+  }
+
+  async function clickText(text) {
+    const s = requireSession(); if (!s) return;
+    try {
+      const d = await api('/api/session/' + s + '/click', { method: 'POST', body: JSON.stringify({ text }) });
+      renderSnap(d.snapshot);
+    } catch (e) { notice('Clic « ' + text + ' » : ' + e.message); }
+  }
+
+  async function gotoUrl(url) {
+    $('urlBar').value = url;
+    await navigate();
+  }
+
+  async function fillInput(selector, placeholder) {
+    const val = prompt('Valeur à saisir dans « ' + (placeholder || selector) + ' » :');
+    if (val === null) return;
+    const s = requireSession(); if (!s) return;
+    try {
+      const d = await api('/api/session/' + s + '/type', { method: 'POST', body: JSON.stringify({ selector, text: val, clear: true }) });
+      renderSnap(d.snapshot);
+    } catch (e) { notice(e.message); }
+  }
+
+  async function refreshShot() {
+    const s = requireSession(); if (!s) return;
+    const box = $('shotBox');
+    box.innerHTML = '<span>Capture en cours…</span>';
+    try {
+      const res = await fetch('/api/session/' + s + '/screenshot?t=' + Date.now(), { headers: headers() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const img = new Image();
+      img.onload = () => { box.innerHTML = ''; box.appendChild(img); };
+      img.onerror = () => { box.innerHTML = '<span>Capture indisponible.</span>'; };
+      img.src = URL.createObjectURL(blob);
+    } catch (e) {
+      box.innerHTML = '<span>' + e.message + '</span>';
     }
-  });
-  promptEl.addEventListener('input', () => {
-    promptEl.style.height = 'auto';
-    promptEl.style.height = Math.min(promptEl.scrollHeight, 160) + 'px';
-  });
+  }
+
+  async function refreshSnap() {
+    const s = requireSession(); if (!s) return;
+    try {
+      const d = await api('/api/session/' + s + '/snapshot');
+      renderSnap(d.snapshot);
+    } catch (e) { notice(e.message); }
+  }
+
+  function esc(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function renderSnap(snap) {
+    if (!snap) return;
+    $('urlBar').value = snap.url || '';
+    $('urlLine').textContent = (snap.title ? snap.title + ' — ' : '') + snap.url;
+
+    const shot = $('shotBox');
+    if (snap.screenshot) {
+      const img = new Image();
+      img.onload = () => { shot.innerHTML = ''; shot.appendChild(img); };
+      img.src = snap.screenshot;
+    } else {
+      refreshShot();
+    }
+
+    const area = $('snapArea');
+    let html = '';
+
+    if (snap.buttons && snap.buttons.length) {
+      html += '<div class="section-title">Boutons (' + snap.buttons.length + ') — clic à distance</div><div class="chips">';
+      for (const b of snap.buttons) {
+        html += '<span class="chip" title="Cliquer sur ce bouton" onclick="clickText(' + JSON.stringify(b.text) + ')">' + esc(b.text) + '</span>';
+      }
+      html += '</div>';
+    }
+
+    if (snap.inputs && snap.inputs.length) {
+      html += '<div class="section-title">Champs de saisie (' + snap.inputs.length + ')</div>';
+      for (const inp of snap.inputs) {
+        if (!inp.selector) continue;
+        html += '<div class="input-item">💬 <span>' + esc(inp.placeholder || inp.type) + '</span> <code>' + esc(inp.selector) + '</code> <button class="small" onclick="fillInput(' + JSON.stringify(inp.selector) + ',' + JSON.stringify(inp.placeholder) + ')">saisir</button></div>';
+      }
+    }
+
+    if (snap.links && snap.links.length) {
+      html += '<div class="section-title">Liens (' + snap.links.length + ')</div>';
+      const shown = snap.links.slice(0, 30);
+      for (const l of shown) {
+        html += '<div class="link-item"><a onclick="gotoUrl(' + JSON.stringify(l.href) + ')">' + esc(l.text) + '</a><span class="u">' + esc(l.href) + '</span></div>';
+      }
+      if (snap.links.length > shown.length) html += '<div class="muted">… +' + (snap.links.length - shown.length) + ' liens</div>';
+    }
+
+    if (snap.texts && snap.texts.length) {
+      html += '<div class="section-title">Textes visibles (' + snap.texts.length + ')</div>';
+      const shown = snap.texts.slice(0, 8);
+      for (const t of shown) html += '<div class="text-block">' + esc(t) + '</div>';
+      if (snap.texts.length > shown.length) {
+        html += '<details><summary>Afficher les ' + snap.texts.length + ' textes…</summary>';
+        for (const t of snap.texts.slice(8)) html += '<div class="text-block">' + esc(t) + '</div>';
+        html += '</details>';
+      }
+    }
+
+    area.innerHTML = html || '<div class="empty">Page vide ou en cours de chargement.</div>';
+  }
+
+  $('apiKey').addEventListener('input', saveKey);
+  $('sessionSel').addEventListener('change', () => { currentSession = $('sessionSel').value || null; if (currentSession) refreshSnap(); });
+  $('apiKey').value = localStorage.getItem('rb_key') || '';
+
+  checkHealth();
+  setInterval(checkHealth, 15000);
+  refreshSessions();
 </script>
 </body>
 </html>
