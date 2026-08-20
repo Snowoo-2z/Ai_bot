@@ -33,6 +33,9 @@ USER_AGENT = os.getenv(
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/138.0.0.0 Safari/537.36",
 )
+# Proxy optionnel pour les sessions (ex: IP résidentielle).
+# Format : http://user:pass@host:port ou host:port
+BROWSER_PROXY = os.getenv("BROWSER_PROXY", "")
 
 SEARCH_URLS = {
     "google": "https://www.google.com/search?q={q}",
@@ -314,6 +317,25 @@ def _clean_result_url(engine: str, href: str) -> str:
     return href
 
 
+def _parse_proxy(proxy_str: str):
+    """Transforme 'http://user:pass@host:port' (ou 'host:port') en config Playwright."""
+    s = (proxy_str or "").strip()
+    if not s:
+        return None
+    if "://" not in s:
+        s = "http://" + s
+    parts = urllib.parse.urlsplit(s)
+    server = parts.scheme + "://" + parts.hostname
+    if parts.port:
+        server += ":" + str(parts.port)
+    proxy = {"server": server}
+    if parts.username:
+        proxy["username"] = urllib.parse.unquote(parts.username)
+    if parts.password:
+        proxy["password"] = urllib.parse.unquote(parts.password)
+    return proxy
+
+
 def _is_engine_junk(engine: str, href: str) -> bool:
     """Filtre les liens 'outils' des moteurs de recherche (préférences, aide...)."""
     host = (urllib.parse.urlparse(href).netloc or "").lower()
@@ -539,6 +561,28 @@ class BrowserSession:
         await self.page.keyboard.press(key)
         await self.page.wait_for_timeout(400)
 
+    async def wait_for(self, selector: str = None, text: str = None, timeout_ms: int = 15000, sleep_ms: int = 0):
+        """Attend qu'un élément soit visible, ou fait une simple pause.
+
+        Indispensable pour les pages JavaScript : naviguer → attendre un texte
+        → re-snapshot. Sans 'selector' ni 'text', attend sleep_ms millisecondes.
+        """
+        if sleep_ms:
+            await self.page.wait_for_timeout(max(0, int(sleep_ms)))
+            return
+        if selector:
+            loc = self.page.locator(selector).first
+        elif text:
+            loc = self.page.get_by_text(text, exact=False).first
+        else:
+            raise ActionError("Il faut fournir 'selector' ou 'text' (ou 'sleep_ms').")
+        try:
+            await loc.wait_for(state="visible", timeout=max(1000, int(timeout_ms)))
+        except PlaywrightTimeoutError as e:
+            raise ActionError(
+                f"Élément introuvable après {timeout_ms} ms : {selector or text}"
+            ) from e
+
     async def scroll(self, direction: str = "down", amount: int = 500):
         amount = max(-5000, min(5000, int(amount)))
         if direction == "up":
@@ -592,6 +636,7 @@ class BrowserManager:
                 self._browser = await self._pw.chromium.launch(
                     headless=HEADLESS,
                     args=CHROMIUM_ARGS,
+                    proxy=_parse_proxy(BROWSER_PROXY),
                 )
             except Exception as e:
                 raise ActionError(
@@ -700,6 +745,13 @@ async def perform_action(session: BrowserSession, action: str, params: dict) -> 
                 )
             elif action == "press":
                 await session.press(params.get("key", ""))
+            elif action == "wait":
+                await session.wait_for(
+                    params.get("selector"),
+                    params.get("text"),
+                    int(params.get("timeout_ms", 15000)),
+                    int(params.get("sleep_ms", 0)),
+                )
             elif action == "scroll":
                 await session.scroll(params.get("direction", "down"), int(params.get("amount", 500)))
             elif action == "back":
@@ -711,7 +763,7 @@ async def perform_action(session: BrowserSession, action: str, params: dict) -> 
             else:
                 raise ActionError(
                     f"Action inconnue : '{action}'. Actions : "
-                    "navigate, search, image_search, upload, click, type, press, "
+                    "navigate, search, image_search, upload, click, type, press, wait, "
                     "scroll, back, forward, reload."
                 )
         except PlaywrightTimeoutError as e:

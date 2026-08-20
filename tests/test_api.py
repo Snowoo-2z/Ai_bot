@@ -133,6 +133,9 @@ class FakeSession:
     async def type_text(self, selector, text, submit=False, clear=False):
         self.calls.append(("type", selector, text, submit, clear))
 
+    async def wait_for(self, selector=None, text=None, timeout_ms=15000, sleep_ms=0):
+        self.calls.append(("wait", selector, text, timeout_ms, sleep_ms))
+
     async def image_search(self, query, engine, license_filter="any"):
         self.calls.append(("image_search", query, engine, license_filter))
 
@@ -169,6 +172,26 @@ class TestPerformAction(unittest.TestCase):
         s = FakeSession()
         self.run_async(browser_api.perform_action(s, "image_search", {"query": "chats", "engine": "google", "license": "commercial"}))
         self.assertEqual(s.calls, [("image_search", "chats", "google", "commercial")])
+
+    def test_wait_dispatch_selector(self):
+        s = FakeSession()
+        self.run_async(browser_api.perform_action(s, "wait", {"selector": ".result", "timeout_ms": 8000}))
+        self.assertEqual(s.calls, [("wait", ".result", None, 8000, 0)])
+
+    def test_wait_dispatch_sleep(self):
+        s = FakeSession()
+        self.run_async(browser_api.perform_action(s, "wait", {"sleep_ms": 500}))
+        self.assertEqual(s.calls, [("wait", None, None, 15000, 500)])
+
+    def test_parse_proxy(self):
+        self.assertIsNone(browser_api._parse_proxy(""))
+        p = browser_api._parse_proxy("http://user:pass@proxy.example.com:8080")
+        self.assertEqual(p["server"], "http://proxy.example.com:8080")
+        self.assertEqual(p["username"], "user")
+        self.assertEqual(p["password"], "pass")
+        p2 = browser_api._parse_proxy("proxy.example.com:3128")
+        self.assertEqual(p2["server"], "http://proxy.example.com:3128")
+        self.assertNotIn("username", p2)
 
     def test_upload_dispatch(self):
         s = FakeSession()

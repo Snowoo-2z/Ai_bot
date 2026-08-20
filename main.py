@@ -75,6 +75,13 @@ class PressRequest(BaseModel):
     key: str
 
 
+class WaitRequest(BaseModel):
+    selector: str = None
+    text: str = None
+    timeout_ms: int = 15000
+    sleep_ms: int = 0
+
+
 class ScrollRequest(BaseModel):
     direction: str = "down"
     amount: int = 500
@@ -330,6 +337,13 @@ async def type_text(session_id: str, req: TypeRequest):
 @app.post("/api/session/{session_id}/press", dependencies=[Depends(require_key)])
 async def press(session_id: str, req: PressRequest):
     return await _run_action(session_id, "press", req.model_dump())
+
+
+@app.post("/api/session/{session_id}/wait", dependencies=[Depends(require_key)])
+async def wait(session_id: str, req: WaitRequest):
+    """Attend qu'un élément soit visible (selector ou text) ou fait une pause
+    (sleep_ms). À utiliser après une navigation sur une page JavaScript."""
+    return await _run_action(session_id, "wait", req.model_dump())
 
 
 @app.post("/api/session/{session_id}/scroll", dependencies=[Depends(require_key)])

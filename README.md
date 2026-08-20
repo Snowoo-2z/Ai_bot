@@ -12,6 +12,15 @@ en fonction du snapshot renvoyé (boucle agent), ou utilise l'endpoint
 > Remplace l'ancien bot arena.ai (Playwright + file d'attente) : plus aucune
 > connexion à arena.ai, plus de captcha, plus de file d'attente.
 
+## 📚 Documentation
+
+- **`API.md`** — documentation complète d'intégration : tous les endpoints,
+  schéma du snapshot, gestion des erreurs, bonnes pratiques agent, exemples de code.
+- **`docs/agent_prompt.md`** — prompt système prêt à coller pour un agent IA +
+  définitions d'outils au format OpenAI function-calling.
+- **`GET /openapi.json`** — schéma OpenAPI machine-readable (importable par
+  les frameworks d'agents).
+
 ## Comment ça marche
 
 ```
@@ -50,6 +59,7 @@ Ai_bot/
 | `MAX_SESSIONS`            | Nombre max de sessions simultanées          | `20`            |
 | `NAV_TIMEOUT_MS`          | Timeout de navigation (ms)                  | `30000`         |
 | `BROWSER_UA`              | User-Agent du navigateur                    | Chrome 138      |
+| `BROWSER_PROXY`           | Proxy pour les sessions, ex. `http://user:pass@host:port` (IP résidentielle pour réduire les captchas) | vide |
 
 ## Endpoints
 
@@ -78,6 +88,7 @@ Chaque action renvoie le **snapshot après coup**.
 | POST    | `/api/session/{id}/click`          | `{ "selector": "a.btn" }` **ou** `{ "text": "Acheter" }` |
 | POST    | `/api/session/{id}/type`           | `{ "selector": "input[placeholder=…]", "text": "…", "submit": false, "clear": false }` |
 | POST    | `/api/session/{id}/press`          | `{ "key": "Enter" }` (Escape, Tab, ArrowDown…) |
+| POST    | `/api/session/{id}/wait`           | `{ "text": "Résultats" }` ou `{ "selector": ".item" }` ou `{ "sleep_ms": 2000 }` — attend qu'un élément apparaisse (pages JavaScript) |
 | POST    | `/api/session/{id}/scroll`         | `{ "direction": "down"\|"up"\|"top"\|"bottom", "amount": 500 }` |
 | POST    | `/api/session/{id}/back`           | — |
 | POST    | `/api/session/{id}/forward`        | — |
