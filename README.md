@@ -1,135 +1,203 @@
-# 🤖 Ai_bot — Bot Arena (FastAPI + Playwright + Render)
+# 🧭 Navigateur IA à distance — API de contrôle de navigateur
 
-Bot qui se connecte à [arena.ai](https://arena.ai) via Playwright, sauvegarde la session, puis expose une API FastAPI pour envoyer des prompts. Déployable sur [Render](https://render.com) depuis ce repo GitHub (runtime **Docker**).
+Une **API qui pilote un vrai navigateur Chromium à distance** : ton autre site
+(ou une IA) envoie des instructions — navigation, recherche web, clic, saisie,
+défilement… — et l'API renvoie **ce que la page affiche** : textes visibles,
+boutons, liens, champs de saisie, URL, titre et capture d'écran.
 
-> ⚠️ **Pourquoi Docker ?** Sur l'environnement natif Render, le build tourne sans droits root, donc
-> `playwright install --with-deps chromium` échoue avec `su: Authentication failure`.
-> Avec un `Dockerfile`, le build est root : on installe Chromium **et** ses dépendances système proprement.
+C'est un "browser as a service" : le site appelant décide de l'action suivante
+en fonction du snapshot renvoyé (boucle agent), ou utilise l'endpoint
+`/api/task` pour une recherche autonome.
+
+> Remplace l'ancien bot arena.ai (Playwright + file d'attente) : plus aucune
+> connexion à arena.ai, plus de captcha, plus de file d'attente.
+
+## 📚 Documentation
+
+- **`API.md`** — documentation complète d'intégration : tous les endpoints,
+  schéma du snapshot, gestion des erreurs, bonnes pratiques agent, exemples de code.
+- **`docs/agent_prompt.md`** — prompt système prêt à coller pour un agent IA +
+  définitions d'outils au format OpenAI function-calling.
+- **`GET /openapi.json`** — schéma OpenAPI machine-readable (importable par
+  les frameworks d'agents).
+
+## Comment ça marche
+
+```
+Ton site ──(x-api-key)──▶ POST /api/session          → session_id
+Ton site ──▶ POST /api/session/{id}/search {query}   → le navigateur cherche sur Google
+Ton site ◀── { snapshot : url, title, texts, buttons, links, inputs, screenshot }
+Ton site ──▶ POST /api/session/{id}/click {text}     → clic sur le bouton/lien
+Ton site ◀── { snapshot }                            → nouvelle page, on recommence
+```
+
+Chaque session est un **onglet isolé** (contexte Chromium séparé : cookies,
+stockage, etc.). Plusieurs sessions peuvent tourner en parallèle. Les sessions
+inactives sont fermées automatiquement après `SESSION_IDLE_TIMEOUT_MIN`
+minutes (défaut : 15).
 
 ## Structure
 
 ```
 Ai_bot/
-├── main.py            # API FastAPI (/chat, /health, frontend statique)
-├── bot_logic.py       # Login arena.ai + envoi de prompt (Playwright)
-├── requirements.txt   # Dépendances Python (versions épinglées)
-├── Dockerfile         # Image Python 3.13 + Chromium + dépendances système
-├── render.yaml        # Déploiement automatique Render (runtime Docker)
-├── static/
-│   └── index.html     # Frontend avec champ clé API
-└── .gitignore
+├── main.py          # API FastAPI (sessions, actions, tâches, console)
+├── browser_api.py   # Gestionnaire de navigateur + actions Playwright + snapshot
+├── requirements.txt
+├── Dockerfile       # Python 3.13 + Chromium (installé avec ses dépendances)
+├── render.yaml      # Déploiement Render (runtime Docker)
+└── static/
+    └── index.html   # Console de test (navigateur visuel)
 ```
 
-## Variables d'environnement (définies dans le dashboard Render)
+## Variables d'environnement
 
-| Variable        | Description                          | Défaut  |
-|-----------------|--------------------------------------|---------|
-| `ARENA_EMAIL`   | Ton email de connexion arena.ai      | —       |
-| `ARENA_PASSWORD`| Ton mot de passe arena.ai            | —       |
-| `MY_SECRET_KEY` | Clé API requise par le frontend      | —       |
-| `SESSION_JSON`  | Session Playwright persistée en variable d'env (survit aux redémarrages Render) | — |
-| `SESSION_FILE`  | Chemin du fichier de session (par défaut `session.json`) | `session.json` |
-| `SERVICE_NAME`  | Nom affiché dans l'erreur "trop de demandes" | `xHigh` |
-| `MAX_ATTEMPTS`  | Relances via le lien direct chat avant d'abandonner | `5` |
-| `RETRY_DELAY_SECONDS` | Pause entre deux tentatives | `10` |
-| `AUTO_RETRY_MINUTES` | Délai avant ré-essai automatique après "trop de demandes" | `3` |
-| `MAX_AUTO_RETRIES` | Nombre max de ré-essais automatiques | `1` |
-| `HUMANIZE` | Comportement "humain" (frappe + pauses aléatoires) | `1` (on) |
-| `TYPE_DELAY_MIN` / `TYPE_DELAY_MAX` | Délai (ms) entre chaque caractère tapé | `15` / `55` |
-| `THINK_MIN` / `THINK_MAX` | Pause (s) avant de commencer à taper | `1.0` / `3.0` |
-| `RESPONSE_TIMEOUT` | Temps max (s) d'attente de la réponse | `60` |
-| `TYPO_RATE` | Proba d'une faute de frappe (corrigée aussitôt) | `0.03` |
-| `BURST_MIN` / `BURST_MAX` | Nombre de caractères par "rafale" de frappe | `2` / `6` |
+| Variable                  | Description                                 | Défaut          |
+|---------------------------|---------------------------------------------|-----------------|
+| `API_KEY`                 | Clé API exigée dans le header `x-api-key` (repli : `MY_SECRET_KEY`) | `change-moi` |
+| `HEADLESS`                | `0` pour voir le navigateur (debug local)   | `1`             |
+| `SESSION_IDLE_TIMEOUT_MIN`| Fermeture auto des sessions inactives (min) | `15`            |
+| `MAX_SESSIONS`            | Nombre max de sessions simultanées          | `20`            |
+| `NAV_TIMEOUT_MS`          | Timeout de navigation (ms)                  | `30000`         |
+| `BROWSER_UA`              | User-Agent du navigateur                    | Chrome 138      |
+| `BROWSER_PROXY`           | Proxy pour les sessions, ex. `http://user:pass@host:port` (IP résidentielle pour réduire les captchas) | vide |
 
-## Déploiement sur Render
+## Endpoints
 
-Le service existant peut être basculé en runtime Docker sans être recréé :
+Tous les endpoints `/api/*` exigent le header `x-api-key: TA_CLÉ`.
+Le CORS est ouvert (ta console peut l'appeler depuis n'importe quel domaine).
 
-1. Render Dashboard → ton service → **Settings** → section **Build** → **Source** → **Edit**
-2. Garde le repo `Snowoo-2z/Ai_bot` et la branche `main`, choisis **Runtime : Docker**
-3. **Deploy** (les variables d'environnement restent inchangées)
+### Sessions
 
-Ou via **Blueprint** : Dashboard → **New +** → **Blueprint** → choisis ce repo → `render.yaml` est appliqué automatiquement.
+| Méthode | Route                          | Description |
+|---------|--------------------------------|-------------|
+| POST    | `/api/session`                 | Ouvre une nouvelle session navigateur → `{ session_id, snapshot }` |
+| GET     | `/api/sessions`                | Liste des sessions actives |
+| GET     | `/api/session/{id}`            | Snapshot complet (avec screenshot) |
+| GET     | `/api/session/{id}/snapshot`   | Snapshot complet (avec screenshot) |
+| GET     | `/api/session/{id}/screenshot` | Capture d'écran PNG (`?full=1` = page entière) |
+| DELETE  | `/api/session/{id}`            | Ferme la session |
+
+### Actions
+
+Chaque action renvoie le **snapshot après coup**.
+
+| Méthode | Route                              | Body (JSON) |
+|---------|------------------------------------|-------------|
+| POST    | `/api/session/{id}/navigate`       | `{ "url": "https://…" }` |
+| POST    | `/api/session/{id}/search`         | `{ "query": "…", "engine": "google"\|"duckduckgo"\|"bing" }` |
+| POST    | `/api/session/{id}/click`          | `{ "selector": "a.btn" }` **ou** `{ "text": "Acheter" }` |
+| POST    | `/api/session/{id}/type`           | `{ "selector": "input[placeholder=…]", "text": "…", "submit": false, "clear": false }` |
+| POST    | `/api/session/{id}/press`          | `{ "key": "Enter" }` (Escape, Tab, ArrowDown…) |
+| POST    | `/api/session/{id}/wait`           | `{ "text": "Résultats" }` ou `{ "selector": ".item" }` ou `{ "sleep_ms": 2000 }` — attend qu'un élément apparaisse (pages JavaScript) |
+| POST    | `/api/session/{id}/scroll`         | `{ "direction": "down"\|"up"\|"top"\|"bottom", "amount": 500 }` |
+| POST    | `/api/session/{id}/back`           | — |
+| POST    | `/api/session/{id}/forward`        | — |
+| POST    | `/api/session/{id}/reload`         | — |
+| POST    | `/api/session/{id}/imagesearch`    | `{ "query": "…", "engine": "…" }` — recherche d'images, résultats dans `snapshot.images` (`?with_data=1` : les 10 vignettes aussi en base64) |
+| POST    | `/api/session/{id}/upload`         | `{ "selector": "input[type=file]", "url": "https://…/image.png" }` ou `{ "selector": "…", "data_base64": "data:image/png;base64,…", "filename": "photo.png" }` — envoie une image dans un champ fichier |
+| POST    | `/api/session/{id}/action`         | `{ "action": "navigate", "url": "…", "screenshot": true }` — version générique |
+
+### Images
+
+- **Recevoir une image** : `GET /api/session/{id}/image?url=https://…` → binaire de
+  l'image (media-type détecté). Avec `?as_base64=1` → JSON
+  `{ ok, content_type, data: "data:image/…;base64,…" }`. Le téléchargement passe
+  par la session navigateur (mêmes cookies/IP que la page).
+- **Recherche d'images** : `POST /api/session/{id}/imagesearch` → le snapshot
+  contient `images: [{ url, thumb, alt, width, height }]` (jusqu'à 60 résultats,
+  moteurs Google/Bing/DuckDuckGo). Avec `?with_data=1`, les 10 premières
+  vignettes sont jointes en base64 (`data`) : le site appelant reçoit tout d'un coup.
+- **Recherche d'images avec filtre de licence** : ajoute `"license": "free"` ou
+  `"license": "commercial"` au body de `/imagesearch` (filtre "usage rights" de
+  Google/Bing). ⚠️ *Best effort : ce filtre repose sur ce que les sites déclarent,
+  ce n'est pas une garantie légale.* DuckDuckGo n'a pas ce filtre.
+- **Images librement réutilisables (recommandé)** : `POST /api/freeimages`
+  avec `{ "query": "…", "source": "openverse"|"commons"|"auto", "usage": "any"|"commercial", "limit": 10 }`.
+  → Openverse (Creative Commons) et Wikimedia Commons renvoient pour **chaque
+  image sa licence exacte et son URL** : le site appelant sait ce qu'il a le
+  droit de faire (affichage, attribution, usage commercial…). `usage: "commercial"`
+  exclut les licences non commerciales (NC). Aucune session navigateur requise.
+- **Envoi d'image dans une page** : `POST /api/session/{id}/upload` avec une URL
+  ou du base64 → l'image est déposée dans le champ fichier (`input[type=file]`
+  repéré dans le snapshot, même s'il est masqué visuellement).
+
+> ⚖️ **À propos des droits** : aucun outil ne peut *garantir* à 100 % qu'une
+> image est libre de droits. Les filtres "usage rights" des moteurs sont
+> approximatifs (déclarés par les uploaders). Pour des illustrations affichées
+> sur un site, le plus sûr est :
+> 1. les sources **Openverse** et **Wikimedia Commons** via `/api/freeimages`
+>    (licence connue et vérifiable) ;
+> 2. en mode "usage commercial", `/api/freeimages` avec `usage: "commercial"` ;
+> 3. respecter l'**attribution** demandée par la licence (CC BY, CC BY-SA…)
+>    — les URLs de licence sont fournies avec chaque résultat.
+> La responsabilité finale de l'usage d'une image reste au site qui l'affiche.
+
+### Tâche autonome
+
+| Méthode | Route      | Body | Description |
+|---------|------------|------|-------------|
+| POST    | `/api/task`| `{ "instruction": "cherche les meilleurs restaurants à Paris", "engine": "google" }` | Ouvre une session temporaire, fait la recherche, renvoie les 10 premiers résultats `{ title, url }` + le snapshot, puis ferme la session. |
+| POST    | `/api/task`| `{ "instruction": "cherche des photos de voiliers", "images": true }` | Même principe en mode **images** : renvoie `images: [{ url, thumb, … }]` au lieu des liens texte. |
+
+### Snapshot (ce que l'API renvoie)
+
+```json
+{
+  "url": "https://www.google.com/search?q=…",
+  "title": "…",
+  "texts": ["blocs de texte visibles…"],
+  "buttons": [{ "text": "Tout accepter" }],
+  "links":   [{ "text": "Titre du lien", "href": "https://…" }],
+  "inputs":  [{ "type": "text", "placeholder": "Rechercher…", "selector": "input[placeholder=\"Rechercher…\"]", "value": "" }],
+  "images":  [{ "url": "https://…/photo.jpg", "thumb": "https://…/mini.jpg", "alt": "…", "width": 800, "height": 600 }],
+  "screenshot": "data:image/png;base64,…"   // seulement si demandé
+}
+```
+
+Le champ `selector` des inputs est prêt à être réutilisé dans `/type` et `/upload`
+(les champs `type: "file"` servent à l'envoi d'image).
+
+## Exemples
+
+```bash
+# 1. Ouvrir une session
+curl -X POST https://TON-SERVEUR/api/session \
+  -H "x-api-key: TA_CLÉ" -H "Content-Type: application/json" -d '{}'
+
+# 2. Rechercher
+curl -X POST https://TON-SERVEUR/api/session/abc123/search \
+  -H "x-api-key: TA_CLÉ" -H "Content-Type: application/json" \
+  -d '{"query": "météo à La Rochelle", "engine": "google"}'
+
+# 3. Cliquer sur un bouton vu dans le snapshot
+curl -X POST https://TON-SERVEUR/api/session/abc123/click \
+  -H "x-api-key: TA_CLÉ" -H "Content-Type: application/json" \
+  -d '{"text": "Tout accepter"}'
+
+# 4. Tâche autonome : recherche + résultats structurés
+curl -X POST https://TON-SERVEUR/api/task \
+  -H "x-api-key: TA_CLÉ" -H "Content-Type: application/json" \
+  -d '{"instruction": "cherche les horaires de la mairie de Soubise"}'
+```
 
 ## Lancement local
 
 ```bash
 pip install -r requirements.txt
 playwright install chromium
+export API_KEY="ma-cle"
 uvicorn main:app --reload
 ```
 
-Ou avec Docker :
+Puis ouvre http://localhost:8000 : la console de test permet d'ouvrir une
+session, naviguer, chercher, cliquer sur les boutons du snapshot, etc.
 
-```bash
-docker build -t ai-bot .
-docker run -p 8000:10000 --env-file .env ai-bot
-```
+## Déploiement sur Render
 
-Puis ouvre http://localhost:8000 et entre ta clé API (`MY_SECRET_KEY`).
+1. Render Dashboard → **New +** → **Blueprint** → choisis ce repo →
+   `render.yaml` est appliqué (runtime Docker, Chromium installé dans l'image).
+2. Définis la variable `API_KEY` dans le service (Settings → Environment).
+3. Le health check `/health` confirme que le service tourne.
 
-## Endpoints
-
-- `GET  /health` → vérifie que le serveur tourne
-- `POST /chat` → header `x-api-key` obligatoire, body JSON :
-  `{ "prompt": "...", "system_prompt": "..." }`.
-  Ajoute la demande à la **file d'attente** et répond immédiatement avec
-  `{ "job_id", "status", "position" }`.
-- `GET  /status/{job_id}` → état actuel d'une demande :
-  `{ "status": "queued"|"processing"|"done"|"error", "position", "result", "error" }`.
-- `GET  /queue` → aperçu de la file (nombre en attente + place de chacun).
-
-Les demandes sont traitées **une par une dans l'ordre d'arrivée (FIFO)**.
-Le frontend envoie la demande puis **poll** `/status/{job_id}` pour afficher la place
-dans la file et le résultat final.
-
-### Comportement face aux reCAPTCHA
-
-Quand un reCAPTCHA (ou un overlay qui intercepte les clics) bloque l'envoi, le bot :
-
-1. détecte le blocage (iframe recaptcha/hcaptcha, texte de vérification humaine,
-   ou timeout de clic type *"intercepts pointer events"*),
-2. **relance via le lien direct** `https://arena.ai/direct` (nouveau navigateur, nouvelle page),
-3. réessaie jusqu'à `MAX_ATTEMPTS` fois (pause de `RETRY_DELAY_SECONDS` entre chaque),
-4. après le dernier échec, renvoie l'erreur :
-   `Trop de demandes sur xHigh pour le moment. Nous réessayerons d'ici quelques minutes automatiquement.`
-   et **passe à la demande suivante** de la file.
-
-La demande échouée est **remise en file automatiquement** après `AUTO_RETRY_MINUTES`
-(au maximum `MAX_AUTO_RETRIES` fois).
-
-### 💡 Éviter les reCAPTCHA : persister la session (important sur Render)
-
-Le disque de Render est **éphémère** : `session.json` disparaît à chaque redéploiement/redémarrage,
-donc le bot doit **se reconnecter à chaque fois** → c'est ce qui déclenche le reCAPTCHA.
-
-Pour éviter ça :
-
-1. Lance le bot une fois, il se connecte et affiche dans les logs une ligne :
-   `💡 SESSION_JSON={...}`
-2. Copie cette valeur dans une variable d'environnement `SESSION_JSON` (Dashboard Render →
-   ton service → Environment).
-3. Au redémarrage, le bot réutilise cette session et **saute la connexion** (donc pas de reCAPTCHA).
-
-La session expirera quand même un jour ; le bot se reconnectera alors automatiquement.
-
-### 🎭 Pourquoi les reCAPTCHA apparaissent si souvent (et comment les réduire)
-
-Le **premier facteur**, c'est l'**IP du serveur**. Les serveurs Render tournent sur des IP de
-**datacenter** (AWS/GCP), que Google/reCAPTCHA marquent d'un mauvais "score de confiance" :
-résultat, le captcha apparaît même pour de vrais humains qui passent par là.
-
-Pour réduire fortement les captchas (sans rien contourner) :
-
-1. **Faire tourner le bot chez toi** (sur ta connexion internet = IP résidentielle) — c'est LE
-   gros levier. Le projet se lance en local : `pip install -r requirements.txt && playwright install chromium`
-   puis `uvicorn main:app`. Tu peux l'exposer à ton téléphone avec un tunnel type `cloudflared` ou `ngrok`.
-2. **Persister la session** (`SESSION_JSON`) pour éviter de te reconnecter sans arrêt (voir plus haut).
-3. **Espacer les demandes** et garder `HUMANIZE=1` : le bot tape le texte **par rafales** avec
-   **fautes de frappe corrigées**, fait des pauses aléatoires, **déplace la souris en trajectoires
-   courbes** (arcs, accélération/décélération, correction de visée avant clic, micro-mouvements
-   pendant l'attente), scrolle la page comme s'il lisait, et attend la réponse sans timing
-   robotique. Ça évite de **déclencher** la protection, sans jamais la contourner.
-4. (Optionnel) Un **proxy résidentiel** (payant) si tu tiens à rester hébergé sur Render.
-
-⚠️ Ne committe jamais `session.json` ni tes identifiants (déjà dans le `.gitignore`).
+> ⚠️ Ne définis pas `API_KEY` à `change-moi` en production : l'API contrôle un
+> vrai navigateur, elle doit rester privée.
